@@ -54,6 +54,12 @@ Referencias:
 
 ## SharePoint
 
+**Debe prepararse antes de la ejecución:** aplicación Entra compatible con autenticación interactiva delegada PnP, consentimiento aprobado, cuenta autorizada y URL del centro de administración. La instalación del módulo no prepara estos requisitos. El parámetro `SharePointClientId` corresponde al **Id. de aplicación (cliente)** en Registros de aplicaciones → aplicación → Información general; no corresponde a un secreto, al Id. de objeto ni al TenantId.
+
+Si no existe una aplicación corporativa compatible, su registro/configuración requiere una acción administrativa previa del cliente: [procedimiento oficial PnP](https://pnp.github.io/powershell/articles/registerapplication.html). Configurar el flujo de escritorio interactivo y URI de redirección de bucle local admitida (normalmente `http://localhost`), revisar los permisos delegados SharePoint necesarios y conceder el consentimiento autorizado. No se necesita un secreto de cliente para el flujo utilizado aquí. No habilitar permisos amplios indiscriminadamente ni asumir que lectura de documentos permite leer todas las ACL.
+
+La comprobación `-PreflightOnly` valida autenticación e inventario administrativo; no certifica acceso a todas las ACL/enlaces. Las denegaciones por sitio quedan registradas durante la captura completa. Ver el paso a paso en los requisitos del [README](../README.md#preparación-previa-de-sharepoint-y-obtención-del-clientid).
+
 PnP.PowerShell requiere ClientId propio autorizado, acceso al centro de administración y permisos para consultar asignaciones en los sitios. Usa Connect-PnPOnline interactivo por conexión explícita y valida tenant, contexto delegado, audiencia y vigencia del token SharePoint antes de consultar.
 
 Consultas: Get-PnPTenant, Get-PnPTenantSite, Get-PnPWeb, Get-PnPSubWeb, Get-PnPList, Get-PnPListItem, Get-PnPProperty, Get-PnPGroupMember, Get-PnPFileSharingLink y Get-PnPFolderSharingLink. Solo metadatos y permisos.

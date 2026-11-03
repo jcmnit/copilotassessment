@@ -9,12 +9,24 @@ No instala módulos, registra aplicaciones, concede consentimiento, asigna roles
 - PowerShell **7.4.6 o posterior**. Windows es la opción recomendada si el módulo administrativo PowerApps necesita compatibilidad con Windows PowerShell. La versión 2 no se ejecuta directamente en Windows PowerShell 5.1.
 - Módulos corporativos previamente preparados: `Microsoft.Graph.Authentication`, `Az.Accounts`, `Microsoft.PowerApps.Administration.PowerShell`, `PnP.PowerShell`. `MSAL.PS` solo si se usa `PowerPlatformClientId`.
 - Cuenta autorizada y MFA por tenant. No se conceden permisos ni se elevan roles desde el script. Preparar consentimiento antes de la captura; si aparece una nueva solicitud de aprobación, gestionarla con el administrador.
-- Para SharePoint: URL real del centro de administración y ClientId de una aplicación Entra existente autorizada para PnP en ese tenant. No se usa el antiguo cliente PnP compartido.
+- **Prerrequisito obligatorio para evaluar SharePoint:** una aplicación Entra preparada para el inicio de sesión interactivo de PnP.PowerShell, con consentimiento y permisos aprobados en el tenant evaluado. Su **Id. de aplicación (cliente)** es el valor de `SharePointClientId`. Instalar PnP.PowerShell o disponer de un rol administrador no proporciona ese ID ni prepara la aplicación. También se necesita la URL real del centro de administración. No se usa el antiguo cliente PnP compartido.
 - Para Dataverse: sesión Azure de usuario y autorización del cliente para obtener token del entorno; privilegios de lectura sobre usuarios, equipos, roles, asociaciones y tabla de agentes. La falta de derechos queda como cobertura pendiente, sin autoasignar System Administrator.
 
 Ver [permisos y fuentes](docs/PERMISOS-Y-FUENTES.md). Roles administrativos y permisos OAuth son requisitos distintos. No usar Global Administrator como solución general a un error 403.
 
 La aplicación PnP necesita permisos para las operaciones de administración y lectura de asignaciones. Algunas operaciones requieren permisos que permiten más que lectura aunque el recolector solo use Get/consultas CSOM. Su aprobación corresponde al administrador; no se solicita ni concede FullControl automáticamente. El rol SharePoint Administrator no garantiza acceso al contenido/permisos de todos los sitios: no se agregan administradores de colección para sortear una denegación.
+
+### Preparación previa de SharePoint y obtención del ClientId
+
+1. El administrador del cliente debe confirmar si existe una aplicación corporativa para **PnP.PowerShell con autenticación interactiva delegada**. No elegir una aplicación arbitraria ni usar el ClientId del cliente oficial Graph como sustituto.
+2. En [Microsoft Entra](https://entra.microsoft.com/), abrir **Registros de aplicaciones → Todas las aplicaciones → aplicación autorizada → Información general**. Copiar **Id. de aplicación (cliente)**; no el Id. de objeto ni el Id. de directorio.
+3. Si no existe una aplicación adecuada, el administrador debe registrarla o adaptar una existente **antes del levantamiento**, según el procedimiento de [registro de aplicaciones PnP](https://pnp.github.io/powershell/articles/registerapplication.html). Para este script se necesita cliente interactivo de escritorio con URI de redirección de bucle local compatible, normalmente `http://localhost`, y permisos delegados SharePoint revisados para los cmdlets utilizados. No se requiere secreto de cliente para este flujo.
+4. El administrador debe aprobar el consentimiento requerido y comprobar que la cuenta puede consultar el centro de administración y las asignaciones de los sitios incluidos. Un ClientId válido, o poder leer archivos, no garantiza poder enumerar permisos. La aprobación de permisos más amplios que lectura es un cambio administrativo previo separado, no una acción del recolector.
+5. Ejecutar la comprobación previa del comando de levantamiento agregando `-PreflightOnly`; revisar `SharePointInventario` en cobertura. Este modo comprueba inventario/autenticación, **no** todas las ACL o enlaces de cada sitio. La captura completa registra las denegaciones y el alcance efectivo por sitio.
+
+Para los dos clientes, registrar por separado **TenantId, SharePointAdminUrl, SharePointClientId y cuenta autorizada**. Pueden utilizarse aplicaciones distintas de un solo tenant. El ClientId no es un secreto; no enviar contraseñas, tokens o secretos por chat.
+
+**Si el cliente no autoriza preparar esta aplicación**, puede ejecutarse el resto con `-SkipSharePoint`, pero quedará parcial y **no incluirá la evaluación de permisos/sobreexposición SharePoint solicitada**. El script no crea la aplicación ni concede consentimiento para completar ese requisito.
 
 ## Ejecución por tenant
 
