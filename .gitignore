@@ -1,0 +1,8 @@
+Resultados/
+CopilotAssessment/
+pruebas-locales/
+test-results/
+dist/
+tenant-*.json
+!docs/tenant.example.json
+*.log

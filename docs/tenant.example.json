@@ -1,0 +1,12 @@
+{
+  "TenantId": "00000000-0000-0000-0000-000000000001",
+  "SharePointAdminUrl": "https://REEMPLAZAR-admin.sharepoint.com",
+  "SharePointClientId": "00000000-0000-0000-0000-000000000002",
+  "OutputDirectory": "./Resultados",
+  "ReportPeriod": "D28",
+  "IncludeLicensedUsers": true,
+  "IncludeGroupMembers": true,
+  "MaxSites": 500,
+  "MaxItemsPerSite": 20000,
+  "MaxDurationMinutes": 240
+}

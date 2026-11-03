@@ -1,0 +1,38 @@
+# Validación de v2.0.0
+
+Validación local del código en PowerShell 7.4.6 sobre Linux. No se utilizaron cuentas, credenciales ni conexiones reales a tenants Microsoft 365.
+
+## Pruebas simuladas
+
+`tests/Test-Offline.ps1`: **807 aserciones, 435 llamadas simuladas, resultado OK**.
+
+Cobertura relevante:
+
+- Dos tenants válidos y carpetas independientes; sesión Graph de otro tenant reconectada explícitamente; rechazo de token incompatible sin consultar recursos.
+- Tenant PowerApps verificado por su entorno predeterminado y rechazo de tenant SharePoint incompatible.
+- Reportes de detalle, resumen y tendencia v2 con periodo D28; cálculos de adopción; CSV vacío válido, cuerpo incompatible y periodo devuelto incorrecto.
+- Colecciones Graph sin `value`, inventario con `data=null`, paginación incompleta y ciclos; conservación de páginas parciales.
+- Roles directos/de equipos Dataverse y consultas de metadatos mediante transporte simulado.
+- Permisos de audiencia amplia vía grupos SharePoint, enlaces anónimos, límites y conservación de evidencia parcial.
+- HTTP 403 diferenciado de inventario vacío; 429 con HttpStatusCode enum y reintento; renovación de token gestionado y rechazo de token externo expirado.
+- Identificadores por fila, neutralización de fórmulas, ausencia de tokens/URL de compartición en los resultados simulados e integridad SHA-256.
+- Análisis offline repetible, evidencia complementaria con decisión humana, detección de alteración y DLP de esquema desconocido sin inferir exclusión.
+- Preflight y NoInteractive diferenciados de una captura completa.
+
+Los avisos de fuentes fallidas en escenarios adversos son resultados esperados de estas pruebas. El recuento de llamadas es del transporte simulado, no de solicitudes a Microsoft.
+
+## Validación adicional
+
+- Lanzador ejecutado en un proceso independiente con todas las fuentes deshabilitadas: resultado Fallido y código de proceso **1**, sin consultas remotas.
+- Revisión sintáctica de los scripts con el parser de PowerShell.
+- Conservación byte por byte de los tres archivos adjuntos originales en `legacy/v1.1.0/`.
+- Paquete de distribución con lista explícita de archivos y manifiesto SHA-256; excluye datos de tenant, configuración local y metadatos Git.
+
+## Validación pendiente fuera de este entorno
+
+- Piloto autorizado en cada tenant y combinación corporativa de módulos/PowerShell.
+- Ejecución en Windows y del fallback de compatibilidad de PowerApps; no probados aquí con módulos reales.
+- Disponibilidad, permisos, esquema efectivo y retraso de actualización de las fuentes Microsoft en cada tenant.
+- Evidencia adicional de catálogo/publicación, DLP efectiva, privilegios y acceso efectivo, asignaciones/consumo/facturación, auditoría y controles operativos.
+
+Un resultado local OK no acredita funcionamiento contra tenants reales ni cumplimiento de los controles. Las decisiones de gobierno deben cerrarse con evidencia verificada por los responsables de cada tenant.

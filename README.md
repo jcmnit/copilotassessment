@@ -1,0 +1,130 @@
+# Levantamiento de Microsoft 365 Copilot — v2.0.0
+
+Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
+
+No instala módulos, registra aplicaciones, concede consentimiento, asigna roles, modifica DLP, publica agentes ni modifica permisos. No descarga contenido de documentos ni conversaciones. El POST de Power Platform es exclusivamente la consulta documentada de inventario. La autenticación puede generar registros y cachés normales del cliente.
+
+## Requisitos y autorizaciones
+
+- PowerShell **7.4.6 o posterior**. Windows es la opción recomendada si el módulo administrativo PowerApps necesita compatibilidad con Windows PowerShell. La versión 2 no se ejecuta directamente en Windows PowerShell 5.1.
+- Módulos corporativos previamente preparados: `Microsoft.Graph.Authentication`, `Az.Accounts`, `Microsoft.PowerApps.Administration.PowerShell`, `PnP.PowerShell`. `MSAL.PS` solo si se usa `PowerPlatformClientId`.
+- Cuenta autorizada y MFA por tenant. No se conceden permisos ni se elevan roles desde el script. Preparar consentimiento antes de la captura; si aparece una nueva solicitud de aprobación, gestionarla con el administrador.
+- Para SharePoint: URL real del centro de administración y ClientId de una aplicación Entra existente autorizada para PnP en ese tenant. No se usa el antiguo cliente PnP compartido.
+- Para Dataverse: sesión Azure de usuario y autorización del cliente para obtener token del entorno; privilegios de lectura sobre usuarios, equipos, roles, asociaciones y tabla de agentes. La falta de derechos queda como cobertura pendiente, sin autoasignar System Administrator.
+
+Ver [permisos y fuentes](docs/PERMISOS-Y-FUENTES.md). Roles administrativos y permisos OAuth son requisitos distintos. No usar Global Administrator como solución general a un error 403.
+
+La aplicación PnP necesita permisos para las operaciones de administración y lectura de asignaciones. Algunas operaciones requieren permisos que permiten más que lectura aunque el recolector solo use Get/consultas CSOM. Su aprobación corresponde al administrador; no se solicita ni concede FullControl automáticamente. El rol SharePoint Administrator no garantiza acceso al contenido/permisos de todos los sitios: no se agregan administradores de colección para sortear una denegación.
+
+## Ejecución por tenant
+
+Usar una consola nueva por tenant y **TenantId explícito**. No es necesario convertir la aplicación en multi-tenant: pueden utilizarse aplicaciones ya autorizadas diferentes en cada cliente.
+
+```powershell
+./Export-CopilotAssessment.ps1 `
+  -TenantId 'GUID-TENANT-A' `
+  -SharePointAdminUrl 'https://clienteA-admin.sharepoint.com' `
+  -SharePointClientId 'GUID-APP-PNP-A' `
+  -ReportPeriod D28 `
+  -IncludeLicensedUsers -IncludeGroupMembers `
+  -OutputDirectory './Resultados'
+```
+
+Reemplazar los GUID y URL. Repetir en otra consola para el tenant B. Los resultados se guardan como `Resultados/<TenantId>/<RunId>/`; nunca se sobrescribe una captura.
+
+Antes de la captura definitiva puede ejecutarse el mismo comando con `-PreflightOnly`. Comprueba autenticación y acceso real a las fuentes, guarda evidencia y se identifica como preflight; no representa un inventario completo. Algunas fuentes, como los reportes, se descargan completas para comprobar permisos y esquema. La preparación previa evita descubrir permisos faltantes durante la única captura acordada.
+
+Parámetros relevantes:
+
+| Parámetro | Comportamiento |
+|---|---|
+| `ReportPeriod` | D7, **D28**, D90 o D180, versión de reporte **v2** explícita. No sustituir D28 por D30. |
+| `SharePointSiteUrls` | Muestra explícita de sitios; el informe conserva que no representa todo el tenant. Sin esta opción revisa los sitios inventariados hasta MaxSites. |
+| `MaxSites` | 500 sitios por defecto. Si se supera, cobertura parcial. |
+| `MaxItemsPerSite` | 20.000 ítems por sitio; escaneo de metadatos/permisos y enlaces, sin contenido. |
+| `MaxUniqueScopesPerSite` | 5.000 ámbitos con permisos únicos por sitio. |
+| `MaxSubWebsPerSite` | 100 subwebs por sitio. |
+| `MaxDataversePrincipals` | 5.000 usuarios/equipos por entorno para consultar asociaciones; superar el límite conserva metadatos y marca parcial. |
+| `MaxPages` | 1.000 por consulta; ciclos o truncamiento invalidan la fuente. |
+| `MaxDurationMinutes` | 240; comprobado entre operaciones. No interrumpe forzosamente un cmdlet o login en curso. |
+| `RequestTimeoutSeconds` | 120 para REST y contexto Graph. PnP usa su transporte y gestión de throttling. |
+| `IncludeLicensedUsers` | Exporta todos los usuarios y asignaciones, no solo Copilot. Activar si el alcance requiere detalle individual. |
+| `IncludeGroupMembers` | Miembros transitivos de los grupos detectados/indicados. No descubre por sí solo todos los grupos del tenant. |
+| `SecurityGroupIds` | Agrega grupos de autores, consumidores y publicadores que no aparezcan asociados a entornos. |
+| `NoInteractive` | No abre login. PowerApps y SharePoint no se capturan si no pueden autenticarse según el modo verificado. No representa una captura integral por sí solo. |
+| `SkipGraph/PowerPlatform/PowerApps/Dataverse/SharePoint/CopilotReports` | Omite fuentes explícitamente; faltar una fuente requerida produce resultado parcial. |
+| `IncludeLegacyConsumption` | Solo compatibilidad: endpoint declarado deprecated en v1.1; omitido por defecto. `FromDate/ToDate` solo afectan esta consulta. |
+
+La captura puede requerir varios inicios de sesión, pero es una ejecución por tenant. No se promete recolección total ante denegaciones o indisponibilidad; conservar los fallos y completar únicamente las fuentes pendientes con procedencia/fecha, sin presentar cortes diferentes como una fotografía simultánea.
+
+## Resultados y análisis offline
+
+- `evidencias/*.json`: respuestas, páginas, identidad, cobertura, diagnóstico, versiones y parámetros no secretos.
+- `CopilotUsoDetalle`, `CopilotAdopcionResumen`, `CopilotAdopcionTendencia`: CSV normalizado y original del reporte. Conservan columnas, periodo y fecha de actualización del servicio; la privacidad del tenant puede ocultar nombres. No se cambia esa configuración ni se intenta desanonimizar.
+- `agentes.csv`, `licencias.csv`, `identidades-agentes.csv`, `planes-facturacion.csv`.
+- `dataverse-asignaciones.csv`: roles directos y de equipos; JSON de miembros/application users/metadatos por entorno. No equivale a autorización efectiva.
+- `sharepoint-sitios.csv`, `sharepoint-permisos.csv`, `sharepoint-enlaces.csv`: configuración y permisos observados; cobertura parcial identificada por sitio. Nunca exporta la URL del enlace de compartición.
+- `cobertura.csv`, `consultas.csv`, `diagnostico.csv`, `manifiesto-sha256.csv`.
+- `analisis/<id>/informe.html`, `adopcion-indicadores.csv`, `dlp-aplicabilidad.csv`, `creditos-resumen.csv`, `hallazgos.csv`, `controles-gobierno.csv`, `raci-propuesta.csv`, `plan-acciones.csv` y manifiesto independiente.
+
+Cada CSV incluye TenantId y RunId. Los JSON originales pueden conservar unidades, campos preview y detalle que no se aplanan. Un CSV sin filas puede no existir: consultar siempre JSON y cobertura para distinguir vacío válido de fuente fallida.
+
+Reanalizar sin conectarse a Microsoft:
+
+```powershell
+./Analyze-CopilotAssessment.ps1 -RunDirectory './Resultados/TENANT/RUN'
+```
+
+El analizador verifica el manifiesto antes de leer la captura y crea una carpeta nueva; no modifica las evidencias. Los hashes detectan cambios frente al manifiesto conservado, pero no sustituyen firma digital o almacenamiento con control de acceso.
+
+## Evidencia adicional y decisiones humanas
+
+El informe distingue **estado de recolección** de **estado de evaluación**. `CompletoSegunPerfil` significa que las consultas automáticas requeridas finalizaron; no certifica cumplimiento ni ausencia de exposición. Los controles empiezan en `NoEvaluado`. La matriz incluye riesgo, responsable, recomendación, condición y evidencia. RACI y plan son propuestas, no cambios aplicados.
+
+Para incorporar una exportación oficial, revisión de permisos efectivos o validación financiera:
+
+```powershell
+./Import-AssessmentEvidence.ps1 `
+  -RunDirectory './Resultados/TENANT/RUN' -TenantId 'GUID-TENANT' `
+  -ControlId FIN-BILLING -EvidenceFile './Factura-revisada.pdf' `
+  -Estado Cumple -Revisor 'Responsable FinOps' `
+  -Justificacion 'Periodo y contrato verificados por el responsable.'
+./Analyze-CopilotAssessment.ps1 -RunDirectory './Resultados/TENANT/RUN'
+```
+
+`Cumple/NoCumple/NoEvaluado/NoAplica` es una decisión humana documentada, no una conclusión inferida por el importador. Evidencia y decisión se conservan en `complementos/` con hash, tenant y captura. No se admiten decisiones duplicadas silenciosas. Proteger también el registro de decisión: no está firmado criptográficamente. Los IDs de control admitidos aparecen en `controles-gobierno.csv`.
+
+## Límites que deben constar en el informe final
+
+- SharePoint: sitios comerciales inventariados por PnP, webs/subwebs, listas visibles e ítems dentro de límites y acceso disponible. Excluye OneDrive, listas ocultas y contenido. Los grupos SharePoint se expanden; grupos Entra anidados requieren análisis adicional. Un enlace de organización no equivale a permiso directo para toda la organización. Un enlace anónimo no demuestra que Copilot lo utilice.
+- Los permisos amplios son indicios de posible sobreexposición. Validar necesidad, clasificación, etiquetas, acceso restringido y políticas antes de afirmar exposición de datos sensibles o incumplimiento.
+- DLP: se calcula solo la inclusión/exclusión declarada por entorno cuando se reconoce el esquema; no se certifica la política efectiva ni restricciones de operaciones/canales.
+- Dataverse: roles, equipos y miembros no prueban privilegios efectivos, profundidad, compartición de agentes ni acceso a fuentes. No se consultan tablas de contenido empresarial.
+- Reconciliar catálogo M365/Teams, bots clásicos, ALM, aprobaciones y permisos de publicación con evidencias adicionales. No asumir separación nativa entre autor y publicador.
+- Facturas y pagos dependen del contrato M365/Azure/CSP. Licencias, planes PAYG habilitados, disponibilidad para asignar créditos, consumo y dinero son conceptos distintos. Adjuntar asignaciones/reglas TenantPool/overage, consumo y fecha de consolidación; no convertir sesiones ni sumar unidades incompatibles.
+- Auditoría, retención, alertas y límites requieren evidencia de configuración y operación. Una captura única no demuestra meses de funcionamiento ni recupera datos cuya retención venció.
+- No cubre por sí solo toda la seguridad Microsoft 365, OneDrive, Exchange, Teams ni contenido de terceros. El alcance general de Copilot se apoya en uso/adopción, licencias, agentes y evaluación SharePoint más las validaciones indicadas.
+
+## Automatización y códigos de salida
+
+El recolector devuelve `ExitCode` sin cerrar la consola. Para un proceso con código de salida real usar el lanzador:
+
+```powershell
+pwsh -NoProfile -File ./Invoke-CopilotAssessment.ps1 -ConfigurationFile './tenant-a.json'
+```
+
+Copiar `docs/tenant.example.json`, completar los identificadores no secretos y guardar un archivo por tenant. Nunca guardar tokens o contraseñas en JSON.
+
+- `0`: consultas requeridas completas según perfil automático; revisar siempre evaluación pendiente.
+- `2`: captura parcial o preflight; no acreditar evaluación completa.
+- `1`: captura fallida o error del lanzador/analizador.
+
+## Pruebas y publicación
+
+```powershell
+pwsh -NoProfile -File ./tests/Test-Offline.ps1
+```
+
+Las pruebas sustituyen todas las conexiones por simulaciones. Incluyen dos tenants válidos, tenant cruzado, errores de esquema, paginación parcial, reportes, permisos/enlaces SharePoint, roles Dataverse, límites, integridad, CSV y decisiones manuales. No sustituyen un piloto autorizado con las versiones de módulos de cada cliente. No se ha validado contra un tenant real.
+
+`legacy/v1.1.0/` conserva exactamente los tres archivos recibidos. Usar los scripts de la raíz para la versión nueva. Publicar código o ZIP no ejecuta el recolector ni publica agentes o el entorno en la nube.

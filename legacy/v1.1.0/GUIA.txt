@@ -1,0 +1,306 @@
+LEVANTAMIENTO DE COPILOT — GUIA DE EJECUCION
+Version 1.1 | Actualizado el 2 de noviembre de 2026
+
+1. ALCANCE Y GARANTIA DE LECTURA
+
+Export-CopilotAssessment.ps1 obtiene informacion de Microsoft Copilot Studio,
+Agent Builder de Microsoft 365, Power Platform y Microsoft Entra ID. No cubre
+GitHub Copilot, Copilot de Azure ni cualquier agente de terceros fuera de las
+fuentes descritas. Nube comercial global; otras nubes requieren adaptacion.
+
+No instala modulos, registra aplicaciones, concede consentimiento, cambia roles,
+asigna licencias o creditos, cambia DLP, crea agentes ni publica recursos.
+Las unicas escrituras de negocio son archivos locales en una carpeta nueva.
+La autenticacion y las consultas pueden generar registros normales del servicio.
+El unico POST de recursos permitido es /resourcequery/resources/query: Microsoft
+lo documenta como consulta de inventario, aunque use el verbo HTTP POST.
+La lista de rutas/metodos se comprueba tambien en continuaciones de paginacion.
+MSAL y los modulos de autenticacion usan sus propios endpoints de inicio de sesion.
+
+La propuesta de gobierno es orientativa: no se aplican cambios. Los campos nulos,
+errores 403 y consultas omitidas se mantienen como desconocidos; no equivalen a
+ausencia de agentes, licencia o controles. Revisar SIEMPRE cobertura.csv.
+
+2. REQUISITOS PREVIOS
+
+Windows PowerShell 5.1 o PowerShell 7. El modulo administrativo PowerApps puede
+tener diferencias de compatibilidad: usar Windows PowerShell 5.1 si su version
+no se importa correctamente. No cambiar ExecutionPolicy desde este script.
+La validacion local del paquete se realiza con PowerShell 5.1 y 7 y fuentes simuladas;
+no se ha ejecutado contra un tenant real ni se certifica una version de modulo.
+
+Modulos preparados por el administrador, segun las fuentes que necesite:
+  Microsoft.Graph.Authentication
+  Microsoft.PowerApps.Administration.PowerShell
+  Az.Accounts (modo automatico, sin PowerPlatformClientId manual)
+  MSAL.PS (alternativa con PowerPlatformClientId de una app corporativa existente)
+
+El script no instala dependencias. No requiere instalar todo Microsoft.Graph.
+Usar versiones aprobadas por la organizacion. No es necesario iniciar Windows
+como administrador para el levantamiento o escribir en una carpeta del usuario.
+
+Permisos Graph de LECTURA, previamente consentidos en una aplicacion autorizada
+(cliente oficial de Microsoft Graph PowerShell o app corporativa existente):
+  LicenseAssignment.Read.All   : licencias adquiridas y asignadas (SKU).
+  RoleManagement.Read.Directory: definiciones y asignaciones de roles Entra.
+  Policy.Read.All              : politicas de acceso condicional.
+  Group.Read.All              : grupos seleccionados y propietarios.
+  GroupMember.Read.All         : miembros transitivos (IncludeGroupMembers).
+  User.Read.All               : usuarios/licencias (IncludeLicensedUsers).
+Las propiedades de algunos miembros pueden aparecer limitadas por permisos del
+tipo de objeto. Las membresias ocultas pueden requerir Member.Read.Hidden;
+no se pide automaticamente. El endpoint de usuarios devuelve todos los usuarios
+con sus asignaciones para evitar depender de un filtro por nombre comercial.
+
+Roles: las APIs tambien evalúan el rol del usuario, no solo el scope. Para los
+datos Graph, Global Reader o roles especificos admitidos por cada endpoint; para
+Power Platform, Power Platform Administrator suele ser el rol operativo para
+inventario, DLP y capacidad. Confirmar la matriz vigente con el administrador.
+No asignar Global Administrator solamente para ejecutar este levantamiento.
+Un rol lector puede no alcanzar para todas las operaciones de administracion.
+
+Power Platform API: token DELEGADO del tenant, audiencia
+https://api.powerplatform.com, de un cliente YA autorizado. El modo automatico
+usa Get-AzAccessToken de Az.Accounts con una sesion de usuario. Que el cliente
+oficial este instalado no garantiza autorizacion: las politicas del tenant o
+permisos del servicio pueden bloquearlo. No usar token app-only para inventario:
+esta consulta requiere contexto de usuario.
+Si se usa PowerPlatformClientId, MSAL abre inicio de sesion con .default: el
+consentimiento debe estar preparado previamente. Si aparece una solicitud nueva
+de consentimiento, cancelarla y gestionar ese prerrequisito con el administrador.
+Esta preparacion queda fuera del script de levantamiento.
+
+Scopes de lectura publicados que corresponden a las consultas:
+  ResourceQuery.Resources.Read
+  Licensing.BillingPolicies.Read
+  Licensing.Allocations.Read
+Las operaciones de entitlement/insights tambien dependen de autorizacion de
+licenciamiento/capacidad del servicio. La referencia de cada operacion publica
+.default, sin una matriz exhaustiva de scopes granulares; no se afirma que los
+tres permisos anteriores garanticen el acceso a todos esos endpoints. Un 403 se
+reporta como pendiente; no se elevan permisos ni se pide ReadWrite como solucion.
+
+3. EJECUCION AUTOMATICA (SIN COPIAR TENANT ID NI CLIENT ID)
+
+Abrir una consola en la carpeta que contiene el script y ejecutar:
+
+  .\Export-CopilotAssessment.ps1 -OutputDirectory '.\Resultados'
+
+Con los modulos y autorizaciones ya preparados, esta es toda la instruccion.
+El script reutiliza sesiones existentes o abre el inicio de sesion de Microsoft.
+Seleccione su cuenta corporativa y complete MFA cuando corresponda. Puede haber
+inicios de sesion separados para Graph, Azure PowerShell y PowerApps.
+
+Descubrimiento del tenant:
+  1. Si indica -TenantId, se utiliza ese tenant y se validan las demas fuentes.
+  2. Si proporciona un token Power Platform valido, se obtiene su tenant.
+  3. En otro caso, se revisan las sesiones activas de Graph y Azure PowerShell.
+  4. Si no hay sesiones utilizables, se abre login para obtener el tenant.
+Si las sesiones activas Graph/Azure corresponden a tenants distintos, el script
+se detiene antes de consultar recursos y solicita seleccionar uno con -TenantId.
+Una cuenta invitada puede iniciar sesion en su tenant de origen: en ese caso
+indique expresamente -TenantId del cliente que desea levantar.
+El tenant seleccionado y el origen de la deteccion se muestran en consola.
+
+Client ID:
+  Graph usa el cliente oficial de Microsoft Graph PowerShell por defecto.
+  Power Platform obtiene el token con Az.Accounts, sin ClientId manual.
+  Se registran los Client ID informativos que exponen la sesion Graph y el
+  token Power Platform en evidencias\autenticacion.json (sin exportar tokens).
+  No se enumeran aplicaciones por nombre ni se elige una app arbitrariamente.
+  No se crean registros de aplicaciones ni se les agregan permisos.
+
+Los permisos, consentimiento previo y acceso condicional siguen siendo
+prerrequisitos. La deteccion automatica no evita MFA ni habilita acceso.
+Si aparece una solicitud NUEVA de consentimiento, cancelarla para conservar el
+alcance de levantamiento. El script no concede consentimientos automaticamente.
+Si falla la autorizacion, la fuente queda pendiente en cobertura.csv. Los
+clientes oficiales pueden estar bloqueados o no tener permiso para estas APIs;
+en ese caso usar la alternativa corporativa ya autorizada que aparece abajo.
+El login puede actualizar caches locales; las conexiones nuevas de Graph/Azure
+se solicitan con alcance Process. No se modifica la configuracion de negocio
+del tenant ni se enumeran recursos Azure para poblar contextos.
+
+Para incluir usuarios licenciados y miembros transitivos de grupos:
+
+  .\Export-CopilotAssessment.ps1 -IncludeLicensedUsers -IncludeGroupMembers -OutputDirectory '.\Resultados'
+
+Cuando se abre una sesion nueva de Graph, se solicitan solamente los scopes de
+lectura necesarios segun esas opciones. Si se reutiliza una sesion, no se amplian
+sus scopes automaticamente: preparar una sesion con autorizacion adecuada si
+una consulta falla. IncludeLicensedUsers incluye todos los usuarios y sus
+asignaciones. SecurityGroupIds permite agregar grupos de autores/publicadores
+que no se detecten en los entornos, usando un arreglo de GUID existente.
+
+Para fijar un tenant concreto, conservando Client ID automaticos:
+
+  .\Export-CopilotAssessment.ps1 -TenantId 'GUID-DEL-TENANT' -OutputDirectory '.\Resultados'
+
+Para no abrir ningun inicio de sesion:
+
+  .\Export-CopilotAssessment.ps1 -NoInteractive -OutputDirectory '.\Resultados'
+
+NoInteractive solo reutiliza sesiones Graph/Azure existentes o token entregado.
+Si no hay tenant detectable, se detiene; puede indicarlo con -TenantId.
+El bloque PowerApps se omite como no obtenido porque requiere login verificado;
+no se reutiliza una sesion PowerApps cuyo tenant no pueda comprobarse. Use
+-SkipPowerApps para omitir expresamente esa fuente en esta modalidad.
+
+Alternativa con aplicaciones corporativas existentes (cuando los clientes
+oficiales no estan autorizados). Los parametros ahora son opcionales:
+
+  .\Export-CopilotAssessment.ps1 -TenantId 'GUID-DEL-TENANT' -GraphClientId 'GUID-APP-GRAPH' -PowerPlatformClientId 'GUID-APP-POWERPLATFORM' -OutputDirectory '.\Resultados'
+
+GraphClientId se aplica a un nuevo login Graph. PowerPlatformClientId utiliza
+MSAL.PS con .default y requiere permisos y redirect URI ya configurados. No se
+crea ni se prepara la aplicacion desde el script. NoInteractive no usa MSAL
+interactivo: proporcionar token si se quiere evitar ese login.
+
+Alternativa con token delegado obtenido por un mecanismo corporativo:
+
+  $ppToken = Read-Host 'Access token delegado de Power Platform' -AsSecureString
+  .\Export-CopilotAssessment.ps1 -PowerPlatformAccessToken $ppToken -OutputDirectory '.\Resultados'
+  Remove-Variable ppToken
+
+El tenant se puede detectar desde ese token sin escribir su GUID. Un token
+explicito invalido, expirado o incompatible con -TenantId detiene la ejecucion
+antes de consultar recursos. No pegar tokens en archivos, historial, correos o
+documentos. La comprobacion local de JWT valida coherencia; el servicio valida
+criptograficamente el token. No se renueva automaticamente el token PP durante
+la recoleccion: si expira, las fuentes restantes pueden quedar no obtenidas.
+
+Fuentes opcionales:
+  -SkipGraph       : omite Graph y su uso para descubrir el tenant.
+  -SkipPowerApps   : omite login administrativo PowerApps, DLP y tenant settings.
+Si no se puede obtener token Power Platform, el script puede continuar con las
+otras fuentes cuando el tenant ya esta identificado; no supone inventario cero.
+
+Consumo por agente: el endpoint de insights /resources esta marcado deprecated
+en la referencia de Microsoft. Por eso se omite por defecto. Preferir exportar
+el reporte oficial desde PPAC. Consulta optativa con fechas inclusivas:
+
+  .\Export-CopilotAssessment.ps1 -IncludeLegacyConsumption -FromDate '2026-11-01' -ToDate '2026-11-02'
+
+Por defecto se usa el primer dia del mes hasta hoy segun el equipo donde se
+ejecute. Conservar periodo y fecha de actualizacion de los datos. La API puede
+tener demora de consolidacion, rangos admitidos y permisos especificos.
+
+4. RESULTADOS Y COBERTURA DE LOS CINCO PUNTOS
+
+En cada ejecucion se crea una subcarpeta independiente; no sobrescribe resultados.
+  informe.html             Resumen, cobertura, observaciones y propuesta tecnica.
+  agentes.csv              Agentes, IDs de propietario/creador, entorno, canales,
+                           autenticacion, publicacion, identidades y conectores.
+  licencias.csv            Todos los SKU, planes, estado y unidades. No se filtra
+                           solo por nombre Copilot para evitar omisiones.
+  hallazgos.csv            Observaciones que requieren validacion (si existen).
+  cobertura.csv            Obtenido / No obtenido / Omitido / Validacion manual.
+  consultas.csv            Metodos y rutas REST; no incluye tokens ni querystrings.
+  manifiesto-sha256.csv    Integridad de los archivos generados.
+  evidencias\*.json        Respuestas originales, paginas, configuracion DLP,
+                           grupos, licencias, roles y metadatos de ejecucion.
+  evidencias\autenticacion.json Tenant y Client ID detectados, origen y modo.
+
+Un conjunto vacio se conserva en JSON; el CSV puede no generarse si no hay filas.
+Si falla una pagina posterior, la fuente se marca 'No obtenido'; sus paginas
+recibidas permanecen en evidencias, pero NO se publican como un inventario completo.
+El limite MaxPages protege ante bucles; alcanzarlo invalida la cobertura de esa
+fuente. Retrys acotados para 429/errores transitorios. Una ejecucion interrumpida
+antes de generar cobertura e informe no debe considerarse terminada.
+
+Inventario:
+  Consulta central de Copilot Studio + Agent Builder, incluidos borradores.
+  Campos adicionales preview pueden no estar disponibles. Conservar JSON.
+  Excluye bots clasicos V1: reconciliar PPAC > Manage > Copilot Studio > Classic
+  chatbots y los catalogos del centro Microsoft 365/Teams. El inventario central
+  puede tener retraso; sus limites de capacidades por agente afectan detalle.
+  Un ownerId no resuelto no prueba agente huerfano; confirmar en Copilot Studio.
+  No se confunde createdBy con ownerId.
+  Canales y ultima publicacion no describen pipelines ni aprobacion de cambios.
+
+Licenciamiento/facturacion:
+  Licencias Graph; planes PAYG; capacidad Copilot Credits (MCSMessages) en JSON;
+  disponibilidad para ASIGNAR por entorno. Se conservan valores y unidades de
+  las respuestas, sin convertir legacy sessions en creditos ni sumar conceptos.
+  No equivale a facturas, deuda, cobro realizado ni presupuesto Azure.
+  Revisar en PPAC el disponible, asignado, consumido y ultima actualizacion.
+  El estado Enabled de un billing plan no prueba un pago al dia.
+  No se deriva consumo de creditos a partir del numero de licencias de usuarios.
+
+Seguridad/acceso:
+  Roles Entra activos, politicas CA, grupos especificados/detectados, DLP y
+  configuracion administrativa. Los JSON preservan scopes y reglas DLP para
+  analizar inclusion/exclusion por entorno y grupos de conectores.
+  La existencia de una DLP no prueba que cubra todos los entornos ni las rutas
+  reales de datos. No se calcula automaticamente la politica efectiva.
+  Roles Environment Admin/Maker se consultan solo para entornos sin Dataverse.
+  Pendiente Dataverse: roles directos/equipos, permisos de tablas/fuentes,
+  comparticion de agentes, privilegios de publicacion y application users.
+  Pendiente PIM elegible, activaciones e historico; no se afirma acceso efectivo.
+  Los conteos de viewers/editors no son la lista de personas autorizadas.
+
+Administracion/monitoreo:
+  Evidencia de tenant settings, entornos/grupos, capacidad y planes; checklist de
+  telemetria, retencion, alertas, topes, TenantPool y sobreconsumo.
+  No consulta conversaciones, transcripciones ni registros de Purview.
+  No consulta presupuestos ni facturas Azure y no habilita Application Insights.
+  Alertas de presupuesto no implican un tope duro o bloqueo del consumo.
+
+Modelo de gobierno:
+  informe.html propone responsables y controles condicionados por las fuentes
+  obtenidas. Es un borrador tecnico para ajustar tras cerrar los pendientes, no
+  una certificacion de controles ya disponibles/activados en este tenant.
+  Definir responsable funcional + tecnico, catalogo, clasificacion de riesgo,
+  entornos de desarrollo/pruebas/produccion, acceso por grupos, autenticacion,
+  DLP, control de publicacion y ALM, FinOps y respuesta a incidentes.
+  Editor puede editar/compartir/publicar: no asumir separacion nativa entre
+  autor y publicador. Confirmar capacidades y aplicar aprobacion mediante ALM
+  y proceso cuando el producto/licencias lo permitan.
+
+Las evidencias contienen datos de identidad y configuracion de seguridad. Usar
+una ubicacion corporativa autorizada, permisos locales adecuados y la retencion
+acordada. No subir automaticamente las evidencias: el script no envia reportes.
+
+5. PRUEBA LOCAL SIN TENANT
+
+  .\Test-Offline.ps1
+
+No abre sesiones ni hace llamadas de red: sustituye las dependencias externas
+por respuestas simuladas dentro del proceso de prueba. Crea resultados de prueba
+en pruebas-locales. Verifica paginacion, colecciones vacias, falla de segunda
+pagina, conservacion de evidencia parcial, lista de lectura, neutralizacion de
+formulas CSV, distincion propietario/creador, hashes, deteccion de tenant y
+Client ID, login automatico simulado, conflicto de tenants, rechazo de token
+incompatible y NoInteractive. No sustituye una prueba
+funcional contra el tenant con las versiones corporativas de los modulos.
+
+6. REFERENCIAS OFICIALES
+
+Inventario y limitaciones:
+https://learn.microsoft.com/en-us/power-platform/admin/power-platform-inventory
+https://learn.microsoft.com/en-us/power-platform/admin/inventory-api
+https://learn.microsoft.com/en-us/power-platform/admin/inventory-schema
+https://learn.microsoft.com/en-us/microsoft-copilot-studio/admin-agent-inventory
+
+Autenticacion y permisos:
+https://learn.microsoft.com/en-us/powershell/microsoftgraph/authentication-commands
+https://learn.microsoft.com/en-us/powershell/module/microsoft.graph.authentication/get-mgcontext
+https://learn.microsoft.com/en-us/powershell/module/az.accounts/get-azaccesstoken
+https://learn.microsoft.com/en-us/power-platform/admin/programmability-authentication-v2
+https://learn.microsoft.com/en-us/power-platform/admin/programmability-permission-reference
+
+Capacidad, facturacion y consumo:
+https://learn.microsoft.com/en-us/rest/api/power-platform/licensing/entitlement/get-entitlement
+https://learn.microsoft.com/en-us/rest/api/power-platform/licensing/billing-policy/list-billing-policies
+https://learn.microsoft.com/en-us/power-platform/admin/programmability-tutorial-manage-copilot-credit-allocations
+https://learn.microsoft.com/en-us/rest/api/power-platform/licensing/entitlement-insight/get-tenant-resources-across-environments
+https://learn.microsoft.com/en-us/power-platform/admin/manage-copilot-studio-messages-capacity
+
+Seguridad y administracion:
+https://learn.microsoft.com/en-us/microsoft-copilot-studio/security-and-governance
+https://learn.microsoft.com/en-us/microsoft-copilot-studio/admin-data-loss-prevention
+https://learn.microsoft.com/en-us/microsoft-copilot-studio/guidance/sec-gov-phase3
+https://learn.microsoft.com/en-us/powershell/module/microsoft.powerapps.administration.powershell/get-admindlppolicy
+https://learn.microsoft.com/en-us/powershell/module/microsoft.powerapps.administration.powershell/get-tenantsettings
+https://learn.microsoft.com/en-us/powershell/module/microsoft.powerapps.administration.powershell/get-adminpowerappenvironmentroleassignment
+https://learn.microsoft.com/en-us/graph/api/subscribedsku-list
