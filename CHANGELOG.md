@@ -1,5 +1,13 @@
 # Cambios
 
+## 2.0.4
+
+- Corrige el login interactivo por sitio/subsitio: un intento PnP y reutilización de token delegado exclusivamente en memoria, también para el contexto administrativo.
+- Las consultas usan conexiones AccessToken sin fallback interactivo; cancelación, token inválido/caducado y HTTP 401 detienen SharePoint, conservan evidencias y registran cobertura parcial. HTTP 403 no abre otra sesión.
+- Registra número de intentos interactivos y detención de autenticación en SharePointProceso.json, sin tokens.
+- Corrige resultTruncated según el SDK oficial de Power Platform: 0 significa truncado y 1 completo; deja de rechazar inventarios completos/vacíos como ErrorDeEsquema.
+- Regresiones con 27 sitios y subsitios, cancelación, caducidad, HTTP 401/403 e indicadores de truncamiento. Graph, Azure, PowerApps y PnP conservan autenticaciones iniciales independientes; no se promete login único global.
+
 ## 2.0.3
 
 - Las cláusulas KQLOM usan `[ordered]` para colocar `$type` antes de los campos derivados, de acuerdo con la secuencia del serializador del SDK oficial.

@@ -1,5 +1,13 @@
 # Validación
 
+## Versión 2.0.4
+
+PowerShell 7.4.6/Linux: **1521 aserciones y 738 llamadas simuladas** en la suite principal; **30 aserciones** de diagnóstico y **28** de recuperación. Sin conexiones reales a tenants.
+
+Workers PowerShell reales con módulo PnP ficticio: 27 sitios y un subsitio por sitio completados con un solo intento interactivo. Cancelación inicial y token vencido no reintentan. HTTP 401 detiene el recorrido en el primer sitio; HTTP 403 registra las 27 denegaciones usando el mismo token. Las conexiones posteriores exigen AccessToken en la fixture y un segundo Connect-PnPOnline interactivo hace fallar el escenario. Los resultados no contienen tokens ni URL de compartición.
+
+La interpretación de resultTruncated sigue el modelo ResourceQueryResponse del SDK oficial powerplatform-management 2.0.3578.333: 0 truncado, 1 completo. Se prueban inventario completo/vacío, paginado y truncado sin continuación, además de un indicador desconocido. La confirmación contra el tenant, las políticas de sesión y PnP 3.4.1/Windows continúa pendiente. No se acredita login único entre Graph, Azure, PowerApps y SharePoint.
+
 ## Versión 2.0.3
 
 PowerShell 7.4.6/Linux: **1116 aserciones y 525 llamadas simuladas** en la suite principal; **30 aserciones** en diagnóstico (tres solicitudes simuladas normales y cinco ampliadas); **28 aserciones** de recuperación. Resultado OK, sin conexiones reales a tenants.

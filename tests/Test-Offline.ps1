@@ -87,15 +87,17 @@ function Invoke-RestMethod {
         }
         $type=$bodyObject.Clauses[0].Values[0]
         if ($type -like '*copilotstudio/agents*') {
-            if ($global:CopilotTestscenario -eq 'inventory-null') {return @{data=$null;count=3;resultTruncated=0}}
+            if ($global:CopilotTestscenario -eq 'inventory-truncated') {return @{data=@();count=0;resultTruncated=0}}
+            if ($global:CopilotTestscenario -eq 'inventory-flag-invalid') {return @{data=@();count=0;resultTruncated=2}}
+            if ($global:CopilotTestscenario -eq 'inventory-null') {return @{data=$null;count=3;resultTruncated=1}}
             if ($bodyObject.Options.SkipToken) {
                 if ($global:CopilotTestscenario -eq 'partial') {throw 'Segunda pagina fallida'}
-                return @{data=@();count=0;skipToken='';resultTruncated=0}
+                return @{data=@();count=0;skipToken='';resultTruncated=1}
             }
-            return @{data=@(@{name='agent-1';tenantId=$global:CopilotTesttenant;properties=@{displayName='=1+1';environmentId=$global:CopilotTestenvId;ownerId=$null;createdBy='11111111-1111-1111-1111-111111111111';authentication='None';sharedWithViewers=@{entireTenant=$true}}});count=1;skipToken='next';resultTruncated=1}
+            return @{data=@(@{name='agent-1';tenantId=$global:CopilotTesttenant;properties=@{displayName='=1+1';environmentId=$global:CopilotTestenvId;ownerId=$null;createdBy='11111111-1111-1111-1111-111111111111';authentication='None';sharedWithViewers=@{entireTenant=$true}}});count=1;skipToken='next';resultTruncated=0}
         }
-        if ($type -like '*powerplatform/environments*') {return @{data=@(@{name=$global:CopilotTestenvId;properties=@{displayName='Production';securityGroupId=$global:CopilotTestgroup}});count=1;resultTruncated=0}}
-        return @{data=@();count=0;resultTruncated=0}
+        if ($type -like '*powerplatform/environments*') {return @{data=@(@{name=$global:CopilotTestenvId;properties=@{displayName='Production';securityGroupId=$global:CopilotTestgroup}});count=1;resultTruncated=1}}
+        return @{data=@();count=0;resultTruncated=1}
     }
     Assert ($Method -eq 'GET') 'Resto Power Platform solo GET'
     if ($Uri -like '*/billingPolicies*') {return @{value=@()}}
@@ -113,12 +115,32 @@ function New-RoleAssignments {
     $base | Add-Member ScriptMethod Has {param($kind) return $true}
     @([pscustomobject]@{Member=[pscustomobject]@{Id=7;LoginName='Site Members';PrincipalType='SharePointGroup'};RoleDefinitionBindings=@([pscustomobject]@{Name='Read';RoleTypeKind='Reader';BasePermissions=$base})})
 }
-function Connect-PnPOnline {[CmdletBinding()]param($Url,$Tenant,$ClientId,[switch]$ReturnConnection,[switch]$Interactive) [pscustomobject]@{Url=$Url}}
-function Get-PnPAccessToken {[CmdletBinding()]param($ResourceTypeName,$Connection) New-FakeToken $global:CopilotTestspoTenant '00000003-0000-0ff1-ce00-000000000000'}
+function Connect-PnPOnline {[CmdletBinding()]param($Url,$Tenant,$ClientId,$AccessToken,[switch]$ReturnConnection,[switch]$Interactive)
+    if ($Interactive) {
+        $global:CopilotTestPnpLogins++
+        if ($global:CopilotTestPnpLogins -gt 1) {throw 'REGRESION: segunda conexion interactiva.'}
+        if ($env:COPILOT_TEST_SCENARIO -eq 'pnp-login-cancel') {throw [OperationCanceledException]::new('Login cancelado.')}
+    } elseif (-not $AccessToken) {throw 'REGRESION: conexion sin token.'}
+    [pscustomobject]@{Url=$Url}
+}
+function Get-PnPAccessToken {[CmdletBinding()]param($ResourceTypeName,$Connection)
+    $expires=[datetimeoffset]::UtcNow.ToUnixTimeSeconds()+3600
+    if ($env:COPILOT_TEST_SCENARIO -eq 'pnp-token-expired') {$expires-=7200}
+    New-FakeToken $global:CopilotTestspoTenant '00000003-0000-0ff1-ce00-000000000000' $expires
+}
 function Get-PnPTenant {[CmdletBinding()]param($Connection) [pscustomobject]@{SharingCapability='ExternalUserAndGuestSharing';DefaultSharingLinkType='Direct'}}
-function Get-PnPTenantSite {[CmdletBinding()]param([switch]$Detailed,$Connection) [pscustomobject]@{Url='https://example.sharepoint.com/sites/test';Title='Test';Owner='owner@example.com';SharingCapability='ExternalUserAndGuestSharing'}}
-function Get-PnPWeb {[CmdletBinding()]param($Includes,$Connection) [pscustomobject]@{Url=$Connection.Url;HasUniqueRoleAssignments=$true;RoleAssignments=(New-RoleAssignments)}}
-function Get-PnPSubWeb {[CmdletBinding()]param([switch]$Recurse,$Includes,$Connection) return @()}
+function Get-PnPTenantSite {[CmdletBinding()]param([switch]$Detailed,$Connection)
+    $count=if ($env:COPILOT_TEST_SCENARIO -like 'pnp-many-*') {27} else {1}
+    foreach ($i in 1..$count) {[pscustomobject]@{Url=('https://example.sharepoint.com/sites/test'+$i);Title='Test';Owner='owner@example.com';SharingCapability='ExternalUserAndGuestSharing'}}
+}
+function Get-PnPWeb {[CmdletBinding()]param($Includes,$Connection)
+    if ($env:COPILOT_TEST_SCENARIO -in @('pnp-many-401','pnp-many-403')) {
+        $ex=[Exception]::new('SECRET-AUTH-ERROR');$ex | Add-Member NoteProperty ResponseStatusCode $(if ($env:COPILOT_TEST_SCENARIO -eq 'pnp-many-401') {401} else {403});throw $ex
+    }
+    [pscustomobject]@{Url=$Connection.Url;HasUniqueRoleAssignments=$true;RoleAssignments=(New-RoleAssignments)}}
+function Get-PnPSubWeb {[CmdletBinding()]param([switch]$Recurse,$Includes,$Connection)
+    if ($env:COPILOT_TEST_SCENARIO -eq 'pnp-many-ok') {[pscustomobject]@{Url=($Connection.Url+'/subweb')}} else {return @()}
+}
 function Get-PnPList {[CmdletBinding()]param($Includes,$Connection) [pscustomobject]@{Id='list1';Hidden=$false;HasUniqueRoleAssignments=$true;BaseType='DocumentLibrary';RoleAssignments=(New-RoleAssignments)}}
 function Get-PnPListItem {[CmdletBinding()]param($List,$PageSize,$Fields,$Connection)
     foreach ($i in 1..2) {[pscustomobject]@{HasUniqueRoleAssignments=$true;FieldValues=@{FileRef="/sites/test/Shared Documents/file$i.docx";FSObjType=0};RoleAssignments=(New-RoleAssignments)}}
@@ -135,11 +157,12 @@ $fixtureTokens=$null;$fixtureErrors=$null
 $fixtureAst=[Management.Automation.Language.Parser]::ParseFile($PSCommandPath,[ref]$fixtureTokens,[ref]$fixtureErrors)
 $fixtureFunctions=@('New-FakeToken','New-RoleAssignments','Connect-PnPOnline','Get-PnPAccessToken','Get-PnPTenant','Get-PnPTenantSite','Get-PnPWeb','Get-PnPSubWeb','Get-PnPList','Get-PnPListItem','Get-PnPProperty','Get-PnPGroupMember','Get-PnPFileSharingLink','Get-PnPFolderSharingLink')
 $moduleText="Add-Type 'namespace Microsoft.SharePoint.Client { public enum PermissionKind { ViewListItems } }'`n"
+$moduleText+='$global:CopilotTestPnpLogins=0'+"`n"
 $moduleText+='$global:CopilotTestspoTenant=$env:COPILOT_TEST_SPO_TENANT'+"`n"
 foreach ($functionName in $fixtureFunctions) {
     $node=$fixtureAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $functionName},$true)
     $definition=$node.Extent.Text
-    if ($functionName -eq 'Connect-PnPOnline') {$definition=$definition.Replace('[pscustomobject]@{Url=$Url}','$global:CopilotTesttenant=$Tenant; if ($env:COPILOT_TEST_SCENARIO -eq ''pnp-process-crash'') {[Environment]::Exit(77)}; [pscustomobject]@{Url=$Url}')}
+    if ($functionName -eq 'Connect-PnPOnline') {$definition=$definition.Replace('[pscustomobject]@{Url=$Url}','if ($Tenant) {$global:CopilotTesttenant=$Tenant}; if ($env:COPILOT_TEST_SCENARIO -eq ''pnp-process-crash'') {[Environment]::Exit(77)}; [pscustomobject]@{Url=$Url}')}
     $moduleText+=$definition+"`n"
 }
 $moduleText | Set-Content -LiteralPath (Join-Path $fixtureModule 'PnP.PowerShell.psm1') -Encoding utf8BOM
@@ -174,7 +197,25 @@ Assert ('SP-BROAD' -in $findings.ControlId -and 'SP-ANON' -in $findings.ControlI
 $content=(Get-ChildItem -LiteralPath $normal.Carpeta -File -Recurse | Where-Object Extension -in @('.json','.csv','.html','.txt') | ForEach-Object {Get-Content -LiteralPath $_.FullName -Raw}) -join ''
 Assert ($content -notmatch 'DO-NOT-EXPORT' -and $content -notmatch 'fake\.[A-Za-z0-9_-]+\.fake') 'Sin enlaces autenticados ni tokens en evidencia'
 foreach ($entry in Import-Csv (Join-Path $normal.Carpeta 'manifiesto-sha256.csv')) {Assert ((Get-FileHash -LiteralPath (Join-Path $normal.Carpeta $entry.Archivo)).Hash -eq $entry.SHA256) 'Hash captura'}
-foreach ($case in @(@('graph-malformed','LicenciasSKU'),@('inventory-null','Agentes'),@('report-malformed','CopilotUsoDetalle'),@('report-period','CopilotUsoDetalle'))) {
+# Regresion: 27 sitios y 27 subwebs, con un solo inicio PnP y tokens en memoria.
+foreach ($scenario in @('pnp-many-ok','pnp-many-401','pnp-many-403','pnp-login-cancel','pnp-token-expired')) {
+    $r=Run-Scenario $scenario
+    $w=Get-Content -LiteralPath (Join-Path $r.Carpeta 'evidencias/SharePointProceso.json') -Raw | ConvertFrom-Json
+    $c=Import-Csv (Join-Path $r.Carpeta 'cobertura.csv')
+    $siteResults=@($c | Where-Object Fuente -like 'SharePointPermisos-*')
+    Assert ($w.IntentosInteractivos -eq 1) ('Un solo intento interactivo: '+$scenario)
+    if ($scenario -eq 'pnp-many-ok') {
+        Assert ($siteResults.Count -eq 27 -and @($siteResults | Where-Object Estado -ne 'Obtenido').Count -eq 0) '27 sitios sin repetir login'
+        $first=Get-Content -LiteralPath (Join-Path $r.Carpeta 'evidencias/SharePointPermisos-0001.json') -Raw | ConvertFrom-Json
+        Assert ($first.WebsRevisadas -eq 2) 'Subwebs con token sin login'
+    } elseif ($scenario -eq 'pnp-many-401') {
+        Assert ($siteResults.Count -eq 1 -and $w.AutenticacionDetenida) '401 detiene los restantes 26 sitios'
+        Assert ('SharePointAutenticacion' -in $c.Fuente -and $r.ExitCode -eq 2) 'Captura parcial tras fallo de autenticacion'
+    } elseif ($scenario -eq 'pnp-many-403') {
+        Assert ($siteResults.Count -eq 27 -and @($siteResults | Where-Object Estado -ne 'SinPermiso').Count -eq 0) '403 conserva falta de permiso sin abrir otro login'
+    } else {Assert ($siteResults.Count -eq 0 -and $r.ExitCode -eq 2) 'Cancelacion inicial sin segundo intento'}
+}
+foreach ($case in @(@('graph-malformed','LicenciasSKU'),@('inventory-null','Agentes'),@('inventory-truncated','Agentes'),@('inventory-flag-invalid','Agentes'),@('report-malformed','CopilotUsoDetalle'),@('report-period','CopilotUsoDetalle'))) {
     $r=Run-Scenario $case[0]
     $c=Import-Csv (Join-Path $r.Carpeta 'cobertura.csv')
     Assert (($c | Where-Object Fuente -eq $case[1]).Estado -eq 'ErrorDeEsquema') ('Rechazar esquema: '+$case[0])

@@ -3,22 +3,41 @@ function Assert-SharePointUrl([string]$Url,[switch]$Admin) {
     if (-not $u.IsAbsoluteUri -or $u.Scheme -ne 'https' -or $u.UserInfo -or $u.Port -ne 443 -or $u.Query -or $u.Fragment -or $u.Host -notmatch '^[a-zA-Z0-9-]+\.sharepoint\.com$') {throw 'URL SharePoint comercial no valida.'}
     if ($Admin -and ($u.Host -notmatch '-admin\.sharepoint\.com$' -or $u.AbsolutePath -ne '/')) {throw 'Indicar la URL del centro de administracion SharePoint.'}
 }
+# El contexto interactivo se utiliza SOLO para obtener el token inicial. Ningun
+# cmdlet de inventario recibe ese contexto: podria abrir el navegador al renovar.
 function Connect-AssessmentSharePoint([string]$Url) {
     Assert-Deadline
     Assert-SharePointUrl $Url
-    $login=@{Url=$Url;Tenant=$TenantId.ToString();ClientId=$SharePointClientId.ToString();ReturnConnection=$true;ErrorAction='Stop'}
-    if ($NoInteractive) {throw 'SharePoint requiere conexion interactiva verificada. No se reutilizan conexiones ambientales.'}
-    $login.Interactive=$true
-    $connection=Connect-PnPOnline @login
-    $token=$null
+    if ($script:spoAuthStopped) {throw [Security.Authentication.AuthenticationException]::new('Autenticacion SharePoint detenida; no se reintentara interactivamente.')}
     try {
-        $token=ConvertFrom-SensitiveValue (Get-PnPAccessToken -ResourceTypeName SharePoint -Connection $connection -ErrorAction Stop)
-        $claims=Read-TokenClaims $token
-        if ([string]$claims.tid -ne $TenantId.ToString() -or -not $claims.scp -or [double]$claims.exp -le [datetimeoffset]::UtcNow.ToUnixTimeSeconds()) {throw 'Sesion SharePoint no es delegada del tenant esperado.'}
+        if (-not $script:spoToken) {
+            if ($NoInteractive -or $script:spoInteractiveAttempts -ge 1) {throw 'No se permite otro inicio interactivo de SharePoint.'}
+            $script:spoInteractiveAttempts++ # Contar antes: cancelaciones tambien consumen el intento.
+            $interactive=Connect-PnPOnline -Url $Url -Tenant $TenantId.ToString() -ClientId $SharePointClientId.ToString() -ReturnConnection -Interactive -ErrorAction Stop
+            $script:spoToken=ConvertFrom-SensitiveValue (Get-PnPAccessToken -ResourceTypeName SharePoint -Connection $interactive -ErrorAction Stop)
+            $interactive=$null
+        }
+        $claims=Read-TokenClaims $script:spoToken
+        if ([string]$claims.tid -ne $TenantId.ToString() -or -not $claims.scp -or [double]$claims.exp -le ([datetimeoffset]::UtcNow.ToUnixTimeSeconds()+60)) {throw 'Token SharePoint caducado, no delegado o de otro tenant.'}
         $aud=[string]$claims.aud
-        if ($aud -ne '00000003-0000-0ff1-ce00-000000000000' -and $aud.TrimEnd('/') -ne ('https://'+([uri]$Url).Host)) {throw 'Audiencia SharePoint no admitida.'}
-        return $connection
-    } finally {$token=$null;$claims=$null}
+        if ($aud -ne '00000003-0000-0ff1-ce00-000000000000' -and $aud.TrimEnd('/') -ne ('https://'+([uri]$Url).Host)) {throw 'Audiencia SharePoint no admitida para el sitio.'}
+        # AccessToken no dispone de fallback interactivo ni de renovacion automatica.
+        return Connect-PnPOnline -Url $Url -AccessToken $script:spoToken -ReturnConnection -ErrorAction Stop
+    } catch {
+        $script:spoAuthStopped=$true
+        throw [Security.Authentication.AuthenticationException]::new('No se pudo reutilizar la autenticacion SharePoint. Bloque detenido sin nuevos inicios de sesion.')
+    } finally {$claims=$null}
+}
+function Test-SpoAuthenticationFailure($Record) {
+    $exception=$Record.Exception
+    while ($exception) {
+        if ($exception -is [Security.Authentication.AuthenticationException] -or $exception.GetType().Name -match 'Msal.*(UiRequired|Client|Service)Exception') {return $true}
+        $http=Get-Field $exception 'Response.StatusCode'
+        if ($null -eq $http) {$http=Get-Field $exception 'ResponseStatusCode'}
+        if ($null -ne $http -and [int]$http -eq 401) {return $true}
+        $exception=$exception.InnerException
+    }
+    return $false # 403 de un sitio no autoriza a abrir otra sesion ni a cambiar permisos.
 }
 function Get-BroadPrincipal([string]$Login) {
     if ($Login -match 'spo-grid-all-users/') {return 'EveryoneExceptExternalUsers'}
@@ -105,6 +124,9 @@ function Read-SharePointSite([string]$SiteUrl,[string]$SourceId) {
         }
         $complete=$true
         [pscustomobject]@{SiteUrl=$SiteUrl;ItemsRevisados=$itemsRead;PermisosUnicos=$uniqueRead;WebsRevisadas=$webUrls.Count;Alcance='Webs, listas visibles e items; sin contenido de documentos ni sitios OneDrive';Completo=$true}
+    } catch {
+        if (Test-SpoAuthenticationFailure $_) {$script:spoAuthStopped=$true}
+        throw
     } finally {
         $permissions=@($script:spoPermissions | Select-Object -Skip $permissionStart)
         $links=@($script:spoLinks | Select-Object -Skip $linkStart)
@@ -114,6 +136,10 @@ function Read-SharePointSite([string]$SiteUrl,[string]$SourceId) {
     }
 }
 function Collect-SharePoint {
+    $script:spoInteractiveAttempts=0;$script:spoAuthStopped=$false;$script:spoToken=$null
+    try { Collect-SharePointCore } finally {$script:spoToken=$null}
+}
+function Collect-SharePointCore {
     $script:spoPermissions=[Collections.Generic.List[object]]::new()
     $script:spoLinks=[Collections.Generic.List[object]]::new()
     $script:spoGroupCache=@{}
@@ -130,6 +156,7 @@ function Collect-SharePoint {
         }
     })
     Save-Csv 'sharepoint-sitios' $sites
+    if ($script:spoAuthStopped) {Add-Status 'SharePointAutenticacion' 'No obtenido' 0 'Autenticacion no disponible; bloque detenido sin nuevos intentos.';return}
     if ($PreflightOnly) {return}
     $selected=@($sites | Where-Object {-not $SharePointSiteUrls.Count -or $_.Url.TrimEnd('/') -in @($SharePointSiteUrls | ForEach-Object {$_.TrimEnd('/')})})
     if ($SharePointSiteUrls.Count) {
@@ -141,6 +168,10 @@ function Collect-SharePoint {
     foreach ($site in ($selected | Select-Object -First $MaxSites)) {
         $index++;$source='SharePointPermisos-{0:D4}' -f $index
         $null=Collect $source {Read-SharePointSite $site.Url $source}
+        if ($script:spoAuthStopped) {
+            Add-Status 'SharePointAutenticacion' 'No obtenido' 0 'Sesion no reutilizable; se detiene el recorrido. Sitios restantes sin evaluar. No se abre otra ventana de autenticacion.'
+            break
+        }
     }
     Save-Csv 'sharepoint-permisos' $script:spoPermissions.ToArray()
     Save-Csv 'sharepoint-enlaces' $script:spoLinks.ToArray()

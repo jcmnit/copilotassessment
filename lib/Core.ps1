@@ -52,6 +52,7 @@ function Get-SafeError($Record) {
     if ($null -eq $http) { $http = Get-Field $Record.Exception 'ResponseStatusCode' }
     if ($null -ne $http) {try {$http=[int]$http} catch {$http=$null}}
     $kind = 'ErrorDeServicio'
+    if ($Record.Exception -is [Security.Authentication.AuthenticationException]) { $kind='SinPermiso' }
     if ($Record.Exception -is [IO.InvalidDataException]) { $kind='ErrorDeEsquema' }
     if ($Record.Exception -is [TimeoutException]) { $kind='TiempoAgotado' }
     if ($Record.Exception -is [OperationCanceledException]) { $kind='LimiteAlcance' }
@@ -228,7 +229,8 @@ function Read-Inventory([string]$Type, [int]$Top=1000) {
         }
         $skip=[string](Get-Field $r 'skipToken')
         if (-not $skip) {
-            if ((Get-Field $r 'resultTruncated') -in @(1,'true','True')) {throw [IO.InvalidDataException]::new('Inventario truncado sin continuacion.')}
+            # SDK oficial: 0 = truncado; 1 = completo (no es un booleano).
+            if ((Has-Field $r 'resultTruncated') -and [string](Get-Field $r 'resultTruncated') -ne '1') {throw [IO.InvalidDataException]::new('Inventario truncado sin continuacion.')}
             return
         }
         if ($seen.ContainsKey($skip)) {throw [IO.InvalidDataException]::new('Continuacion ciclica.')}

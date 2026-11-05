@@ -1,4 +1,4 @@
-# Levantamiento de Microsoft 365 Copilot — v2.0.3
+# Levantamiento de Microsoft 365 Copilot — v2.0.4
 
 Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
 
@@ -33,6 +33,14 @@ La conexión aislada se incorporó tras observar un stack overflow en el resolve
 El worker guarda sus datos en `sharepoint-worker/`; el padre incorpora las evidencias SharePoint y su cobertura al informe común. `evidencias/SharePointProceso.json` registra PID y versión PnP del proceso hijo. Si el hijo termina abruptamente o agota su tiempo, el padre marca error de runtime/tiempo y conserva el resto de la captura. La terminación abrupta real del proceso principal todavía requiere recuperación offline.
 
 La autenticación PnP correcta no demuestra permiso para todas las consultas administrativas o las ACL. Las denegaciones por sitio se siguen informando.
+
+### Autenticación SharePoint corregida en 2.0.4
+
+El worker realiza **un solo intento interactivo PnP por ejecución**, incluidos todos los sitios y subsitios. Obtiene un token delegado, valida tenant, audiencia y vigencia, y usa conexiones `-AccessToken` para las consultas. Los contextos de inventario no conservan un mecanismo capaz de abrir el navegador. El token permanece exclusivamente en memoria y se elimina al finalizar el bloque; no se escribe en resultados, argumentos del proceso ni configuración.
+
+Si se cancela el login, el token no es válido, caduca o aparece HTTP 401, SharePoint se detiene con cobertura parcial. No solicita otra sesión ni recorre los sitios restantes con intentos interactivos. HTTP 403 por sitio se conserva como falta de permisos y puede continuar con el mismo token. No se asignan administradores de colección ni se modifican permisos. Las conexiones con token no lo renuevan: una captura que exceda su vigencia requiere completar posteriormente el alcance pendiente; no representa una captura completa.
+
+**Esto no unifica los clientes Graph, Azure, PowerApps y PnP.** Pueden pedir una autenticación inicial independiente. La aplicación PnP configurada solo con permisos SharePoint no autoriza Graph o Power Platform. Un único login para todos requiere otra arquitectura de autenticación compartida y permisos aprobados para cada recurso; esta versión no promete ese comportamiento ni agrega permisos automáticamente.
 
 ### Preparación previa de SharePoint y obtención del ClientId
 
@@ -120,7 +128,7 @@ La versión 2.0.3 construye las cláusulas con diccionarios ordenados para emiti
 El diagnóstico acotado versión 1.1 utiliza también el formato ordenado. Con `-IncludeClauseTests` realiza **cinco consultas**: filtro+orden, solo filtro, solo orden, `take 1` y créditos. No interpreta una fila de control como inventario completo.
 
 ```powershell
-pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.3\Test-PowerPlatformApi.ps1' -TenantId 'GUID-TENANT' -OutputDirectory 'C:\pw7\Copilot\Diagnostico-PowerPlatform' -IncludeClauseTests
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.4\Test-PowerPlatformApi.ps1' -TenantId 'GUID-TENANT' -OutputDirectory 'C:\pw7\Copilot\Diagnostico-PowerPlatform' -IncludeClauseTests
 ```
 
 Antes de repetir el levantamiento completo, confirmar que `InventarioFormatoOrdenado` responde HTTP 200. Si sigue devolviendo 400, comparar `InventarioSoloWhere` y `InventarioSoloOrderBy` y conservar sus mensajes saneados. El 404 de MCSMessages sigue siendo un problema de disponibilidad no determinado y no prueba saldo cero.

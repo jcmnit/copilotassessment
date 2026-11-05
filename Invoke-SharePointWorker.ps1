@@ -38,7 +38,7 @@ try {
     $script:checkpointEnabled=$false
     Save-Json 'cobertura' $script:status.ToArray()
     Save-Json 'diagnostico' $script:diagnostics.ToArray()
-    $result=[ordered]@{TenantId=$TenantId.ToString();RunId=$script:runId;Terminado=$finished;FinUTC=[datetime]::UtcNow.ToString('o');ProcesoId=$PID;Modulos=@(Get-Module | Where-Object Name -eq 'PnP.PowerShell' | ForEach-Object {[pscustomobject]@{Nombre=$_.Name;Version=$_.Version.ToString()}});Nota='Proceso aislado de los SDK Graph/Azure/PowerApps.'}
+    $result=[ordered]@{TenantId=$TenantId.ToString();RunId=$script:runId;Terminado=$finished;FinUTC=[datetime]::UtcNow.ToString('o');ProcesoId=$PID;IntentosInteractivos=$script:spoInteractiveAttempts;AutenticacionDetenida=$script:spoAuthStopped;Modulos=@(Get-Module | Where-Object Name -eq 'PnP.PowerShell' | ForEach-Object {[pscustomobject]@{Nombre=$_.Name;Version=$_.Version.ToString()}});Nota='Proceso aislado de los SDK Graph/Azure/PowerApps.'}
     $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $script:runPath 'resultado.json') -Encoding utf8BOM
     Write-Manifest
 }
