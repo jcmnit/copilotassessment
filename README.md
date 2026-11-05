@@ -1,4 +1,4 @@
-# Levantamiento de Microsoft 365 Copilot — v2.0.1
+# Levantamiento de Microsoft 365 Copilot — v2.0.2
 
 Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
 
@@ -15,6 +15,16 @@ No instala módulos, registra aplicaciones, concede consentimiento, asigna roles
 Ver [permisos y fuentes](docs/PERMISOS-Y-FUENTES.md). Roles administrativos y permisos OAuth son requisitos distintos. No usar Global Administrator como solución general a un error 403.
 
 La aplicación PnP necesita permisos para las operaciones de administración y lectura de asignaciones. Algunas operaciones requieren permisos que permiten más que lectura aunque el recolector solo use Get/consultas CSOM. Su aprobación corresponde al administrador; no se solicita ni concede FullControl automáticamente. El rol SharePoint Administrator no garantiza acceso al contenido/permisos de todos los sitios: no se agregan administradores de colección para sortear una denegación.
+
+### Aislamiento de módulos desde 2.0.2
+
+El recolector inicia automáticamente un proceso `pwsh -NoProfile` exclusivo para SharePoint. PnP.PowerShell no se importa junto con Graph, Az.Accounts o PowerApps en el proceso principal. Ambos procesos forman parte de la misma captura y utilizan el mismo TenantId/RunId; no hay que ejecutar dos levantamientos ni transferir tokens entre procesos.
+
+La conexión aislada se incorporó tras observar un stack overflow en el resolvedor de dependencias de PnP 3.4.1 dentro de una sesión combinada, mientras la conexión PnP aislada sí funcionaba. No se atribuye el conflicto a una DLL o módulo concreto sin evidencia adicional. No se requiere reinstalar módulos ni ampliar permisos para aplicar este cambio.
+
+El worker guarda sus datos en `sharepoint-worker/`; el padre incorpora las evidencias SharePoint y su cobertura al informe común. `evidencias/SharePointProceso.json` registra PID y versión PnP del proceso hijo. Si el hijo termina abruptamente o agota su tiempo, el padre marca error de runtime/tiempo y conserva el resto de la captura. La terminación abrupta real del proceso principal todavía requiere recuperación offline.
+
+La autenticación PnP correcta no demuestra permiso para todas las consultas administrativas o las ACL. Las denegaciones por sitio se siguen informando.
 
 ### Preparación previa de SharePoint y obtención del ClientId
 
@@ -68,6 +78,20 @@ Parámetros relevantes:
 | `IncludeLegacyConsumption` | Solo compatibilidad: endpoint declarado deprecated en v1.1; omitido por defecto. `FromDate/ToDate` solo afectan esta consulta. |
 
 La captura puede requerir varios inicios de sesión, pero es una ejecución por tenant. No se promete recolección total ante denegaciones o indisponibilidad; conservar los fallos y completar únicamente las fuentes pendientes con procedencia/fecha, sin presentar cortes diferentes como una fotografía simultánea.
+
+### Preflight tras los errores de inventario y créditos
+
+La versión 2.0.2 utiliza `name`, identificador del recurso documentado en el inventario, como clave de orden estable; compara el tipo con `in~` y solo envía SkipToken cuando existe una continuación. La especificación no sensible de la consulta queda en `evidencias/consulta-*.json`. Es un ajuste al contrato documentado, **no prueba que el HTTP 400 observado en un tenant esté resuelto**.
+
+HTTP 400 se identifica como `SolicitudInvalida`; HTTP 404 como `NoDisponible`. Cuando el servicio devuelve un código estructurado, `CodigoServicio` se conserva en diagnóstico, sin mensajes completos ni cuerpos de error. Un 400 no acredita falta de permisos. Un 404 de MCSMessages no distingue por sí solo entre entitlement no disponible, recurso inexistente u operación no disponible, y no se convierte en cero créditos ni en ausencia de licencia.
+
+Antes de una captura completa, ejecutar preflight con la carpeta nueva. Ejemplo en una sola línea, sustituyendo los valores:
+
+```powershell
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.2\Export-CopilotAssessment.ps1' -TenantId 'GUID-TENANT' -SharePointAdminUrl 'https://CLIENTE-admin.sharepoint.com' -SharePointClientId 'GUID-APP-PNP' -ReportPeriod D28 -IncludeLicensedUsers -IncludeGroupMembers -OutputDirectory 'C:\pw7\Copilot\Resultados-v2.0.2' -PreflightOnly
+```
+
+Si persiste un 400, revisar el código estructurado y la consulta registrada antes de modificar roles o consentimiento. Si persiste el 404 de créditos, contrastar capacidad/licenciamiento en PPAC y conservar el estado desconocido en el informe.
 
 ## Resultados y análisis offline
 

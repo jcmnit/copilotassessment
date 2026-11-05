@@ -56,10 +56,22 @@ function Get-SafeError($Record) {
     if ($Record.Exception -is [TimeoutException]) { $kind='TiempoAgotado' }
     if ($Record.Exception -is [OperationCanceledException]) { $kind='LimiteAlcance' }
     if ($http -in @(401,403)) { $kind='SinPermiso' }
+    if ($http -eq 400) {$kind='SolicitudInvalida'}
+    if ($http -eq 404) {$kind='NoDisponible'}
+    $serviceCode=$null
+    $detail=Get-Field $Record 'ErrorDetails.Message'
+    if ($detail) {
+        try {
+            $structured=ConvertFrom-Json -InputObject ([string]$detail) -ErrorAction Stop
+            $candidate=Get-Field $structured 'error.code'
+            if (-not $candidate) {$candidate=Get-Field $structured 'code'}
+            if ($candidate -is [string] -and $candidate -match '^[A-Za-z][A-Za-z0-9_.-]{0,119}$') {$serviceCode=$candidate}
+        } catch {} # No exportar respuestas libres, mensajes ni cuerpos completos.
+    }
     $requestId = Get-Field $Record.Exception 'Response.Headers.request-id'
     if ($requestId -and [string]$requestId -notmatch '^[a-zA-Z0-9-]{1,100}$') { $requestId=$null }
     # No se persisten Message, cuerpos, Location ni enlaces de descarga autenticados.
-    [pscustomobject]@{Estado=$kind;HTTP=[string]$http;Tipo=$Record.Exception.GetType().Name;RequestId=[string]$requestId}
+    [pscustomobject]@{Estado=$kind;HTTP=[string]$http;Tipo=$Record.Exception.GetType().Name;RequestId=[string]$requestId;CodigoServicio=$serviceCode}
 }
 function Assert-Deadline {
     if ([datetime]::UtcNow -gt $script:deadline) { throw [TimeoutException]::new('Tiempo global agotado.') }
@@ -77,8 +89,8 @@ function Collect([string]$Name, [scriptblock]$Action) {
         return $rows
     } catch {
         $e = Get-SafeError $_
-        $script:diagnostics.Add([pscustomobject]@{Fuente=$Name;HTTP=$e.HTTP;Tipo=$e.Tipo;RequestId=$e.RequestId;PaginasRecuperadas=$script:sourcePages;UTC=[datetime]::UtcNow.ToString('o')})
-        Add-Status $Name $e.Estado 0 ("HTTP={0}; tipo={1}; paginas conservadas={2}. No equivale a cero recursos; revisar diagnostico y permisos." -f $e.HTTP,$e.Tipo,$script:sourcePages)
+        $script:diagnostics.Add([pscustomobject]@{Fuente=$Name;HTTP=$e.HTTP;Tipo=$e.Tipo;RequestId=$e.RequestId;CodigoServicio=$e.CodigoServicio;PaginasRecuperadas=$script:sourcePages;UTC=[datetime]::UtcNow.ToString('o')})
+        Add-Status $Name $e.Estado 0 ("HTTP={0}; tipo={1}; paginas conservadas={2}; codigo={3}. No equivale a cero recursos; 400 no acredita falta de permisos y 404 no acredita capacidad cero." -f $e.HTTP,$e.Tipo,$script:sourcePages,$e.CodigoServicio)
         Write-Warning "$Name incompleto: $($e.Estado)."
         return @()
     } finally { $script:activeSource=$null }
@@ -197,7 +209,10 @@ function Read-Pages([string]$Service, [string]$Url) {
 function Read-Inventory([string]$Type, [int]$Top=1000) {
     $skip='';$seen=@{}
     for ($page=0;$page -lt $MaxPages;$page++) {
-        $body=@{TableName='PowerPlatformResources';Clauses=@(@{'$type'='where';FieldName='type';Operator='==';Values=@("'$Type'")},@{'$type'='orderby';FieldNamesAscDesc=@{id='asc'}});Options=@{Top=$Top;SkipToken=$skip}}
+        $options=@{Top=$Top}
+        if ($skip) {$options.SkipToken=$skip}
+        $body=@{TableName='PowerPlatformResources';Clauses=@(@{'$type'='where';FieldName='type';Operator='in~';Values=@("'$Type'")},@{'$type'='orderby';FieldNamesAscDesc=@{name='asc'}});Options=$options}
+        Save-Json ('consulta-'+$script:activeSource) ([ordered]@{Tabla=$body.TableName;Clausulas=$body.Clauses;Top=$Top;ContinuacionPresente=[bool]$skip;ApiVersion='2024-10-01';Nota='name es el identificador de recurso documentado; no se persiste el token de continuacion de la solicitud.'})
         $r=Invoke-Read PowerPlatform 'https://api.powerplatform.com/resourcequery/resources/query?api-version=2024-10-01' POST $body
         Save-Json ("pagina-$script:activeSource-{0:D4}" -f $page) $r
         $script:sourcePages++

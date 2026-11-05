@@ -1,5 +1,13 @@
 # Validación
 
+## Versión 2.0.2
+
+Suite principal: **1046 aserciones y 525 llamadas simuladas, OK**, PowerShell 7.4.6/Linux. Los workers utilizan procesos `pwsh` reales con un módulo PnP ficticio creado en una carpeta temporal; no cargan PnP real ni se conectan al tenant. Se verifica PID diferente, captura de permisos/enlaces, cobertura común y supervivencia/cierre del padre cuando un hijo termina con código 77. Esta terminación controlada prueba el límite de proceso; no reproduce el stack overflow interno de PnP.
+
+También se comprueban la consulta por `name`, HTTP 400 con código estructurado sin exportar el mensaje libre y HTTP 404 de créditos como disponibilidad no acreditada. La consulta corregida no se ha ejecutado aquí contra el tenant del cliente y el 404 no tiene una causa definitiva identificada.
+
+Evidencia del cliente: PnP 3.4.1 conectó correctamente por separado en PowerShell 7.6.9, mientras la sesión combinada terminó por stack overflow en ResolveDependency. Esto respalda aislar procesos, sin identificar aún la dependencia concreta ni certificar acceso administrativo a todos los sitios.
+
 ## Versión 2.0.1
 
 Pruebas locales en PowerShell 7.4.6/Linux, sin tenant: suite principal **811 aserciones y 435 llamadas simuladas, OK**; suite adicional `tests/Test-Recovery.ps1`, **28 aserciones, OK**. Verifica copia independiente, originales intactos, estado parcial, FinUTC original sin cambios, JSON inválido conservado, fuentes ausentes no equiparadas a inventario vacío, hashes desde recuperación, advertencia en informe, reanálisis offline y rechazo de recuperación sobre una captura con manifiesto.

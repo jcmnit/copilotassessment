@@ -1,5 +1,14 @@
 # Cambios
 
+## 2.0.2
+
+- SharePoint/PnP se ejecuta en un proceso PowerShell propio, separado de Graph, Azure y PowerApps; conserva el TenantId/RunId de la captura y no transfiere tokens.
+- El padre importa resultados y cobertura del worker, detecta salida abrupta/timeout y puede finalizar la captura parcial con manifiesto.
+- Funciones locales de token separadas de la autenticación Graph/Azure para evitar importar esos SDK en el worker PnP.
+- Inventario ordenado por `name` documentado; tipo comparado con `in~`; SkipToken omitido en la primera página; especificación de consulta registrada sin tokens de continuación.
+- Diagnóstico distingue HTTP 400/404 de denegaciones 401/403 y conserva solo códigos estructurados del servicio, sin mensajes completos ni cuerpos.
+- El HTTP 400 original y el 404 de créditos requieren validación posterior en el tenant; no se afirma resueltos ni se interpretan como cero recursos/capacidad.
+
 ## 2.0.1
 
 - Recuperador offline para capturas sin manifiesto: nueva carpeta, originales intactos, evidencia corrupta separada e informe parcial con límites de integridad explícitos.

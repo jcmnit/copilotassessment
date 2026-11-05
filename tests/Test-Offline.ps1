@@ -76,6 +76,14 @@ function Invoke-RestMethod {
     if ($Uri -like '*/resourcequery/resources/query*') {
         Assert ($Method -eq 'POST') 'POST solo consulta de inventario'
         $bodyObject=$Body | ConvertFrom-Json
+        Assert ($bodyObject.Clauses[1].FieldNamesAscDesc.name -eq 'asc' -and -not $bodyObject.Clauses[1].FieldNamesAscDesc.id) 'Inventario ordenado por identificador name documentado'
+        if ($global:CopilotTestscenario -eq 'inventory-http400') {
+            $exception=[Exception]::new('fixture')
+            $exception | Add-Member NoteProperty ResponseStatusCode 400
+            $record=[Management.Automation.ErrorRecord]::new($exception,'FixtureBadRequest',[Management.Automation.ErrorCategory]::InvalidArgument,$null)
+            $record.ErrorDetails=[Management.Automation.ErrorDetails]::new('{"error":{"code":"InvalidQuery","message":"SECRET-ERROR-MESSAGE"}}')
+            throw $record
+        }
         $type=$bodyObject.Clauses[0].Values[0]
         if ($type -like '*copilotstudio/agents*') {
             if ($global:CopilotTestscenario -eq 'inventory-null') {return @{data=$null;count=3;resultTruncated=0}}
@@ -91,7 +99,10 @@ function Invoke-RestMethod {
     Assert ($Method -eq 'GET') 'Resto Power Platform solo GET'
     if ($Uri -like '*/billingPolicies*') {return @{value=@()}}
     if ($Uri -like '*/allocationsV2/availability*') {return @{entitlementAllocationsAvailable=@(@{entitlementId='MCSMessages';availableQuantity=20000})}}
-    if ($Uri -like '*/entitlements/MCSMessages?*') {return @{entitlementId='MCSMessages';entitlement=@{capacity=@{entitled=@{value=25000};consumed=@{value=10}}}}}
+    if ($Uri -like '*/entitlements/MCSMessages?*') {
+        if ($global:CopilotTestscenario -eq 'credits-http404') {$exception=[Exception]::new('not found');$exception | Add-Member NoteProperty ResponseStatusCode 404;throw $exception}
+        return @{entitlementId='MCSMessages';entitlement=@{capacity=@{entitled=@{value=25000};consumed=@{value=10}}}}
+    }
     throw 'Ruta PP no simulada.'
 }
 # Mock de CSOM y PnP. No se cargan ensamblados ni modulos Microsoft reales.
@@ -115,8 +126,28 @@ function Get-PnPProperty {[CmdletBinding()]param($ClientObject,[string[]]$Proper
 function Get-PnPGroupMember {[CmdletBinding()]param($Group,$Connection) [pscustomobject]@{Id=8;LoginName=('c:0-.f|rolemanager|spo-grid-all-users/'+$global:CopilotTesttenant);PrincipalType='SecurityGroup'}}
 function Get-PnPFileSharingLink {[CmdletBinding()]param($Identity,$Connection) [pscustomobject]@{Id='link1';Link=@{Scope='anonymous';Type='view';WebUrl='https://secret-link.example/DO-NOT-EXPORT'};Roles=@('read');ExpirationDateTime='2099-01-01T00:00:00Z'}}
 function Get-PnPFolderSharingLink {[CmdletBinding()]param($Folder,$Connection) return @()}
+# Modulo PnP ficticio que se carga en un proceso PowerShell REAL separado.
+# La configuracion de fixture solo afecta a este modulo de pruebas, nunca al producto.
+$fixtureModule=Join-Path $OutputDirectory 'modules/PnP.PowerShell/999.0.0'
+$null=New-Item -ItemType Directory -Path $fixtureModule -Force
+$fixtureTokens=$null;$fixtureErrors=$null
+$fixtureAst=[Management.Automation.Language.Parser]::ParseFile($PSCommandPath,[ref]$fixtureTokens,[ref]$fixtureErrors)
+$fixtureFunctions=@('New-FakeToken','New-RoleAssignments','Connect-PnPOnline','Get-PnPAccessToken','Get-PnPTenant','Get-PnPTenantSite','Get-PnPWeb','Get-PnPSubWeb','Get-PnPList','Get-PnPListItem','Get-PnPProperty','Get-PnPGroupMember','Get-PnPFileSharingLink','Get-PnPFolderSharingLink')
+$moduleText="Add-Type 'namespace Microsoft.SharePoint.Client { public enum PermissionKind { ViewListItems } }'`n"
+$moduleText+='$global:CopilotTestspoTenant=$env:COPILOT_TEST_SPO_TENANT'+"`n"
+foreach ($functionName in $fixtureFunctions) {
+    $node=$fixtureAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $functionName},$true)
+    $definition=$node.Extent.Text
+    if ($functionName -eq 'Connect-PnPOnline') {$definition=$definition.Replace('[pscustomobject]@{Url=$Url}','$global:CopilotTesttenant=$Tenant; if ($env:COPILOT_TEST_SCENARIO -eq ''pnp-process-crash'') {[Environment]::Exit(77)}; [pscustomobject]@{Url=$Url}')}
+    $moduleText+=$definition+"`n"
+}
+$moduleText | Set-Content -LiteralPath (Join-Path $fixtureModule 'PnP.PowerShell.psm1') -Encoding utf8BOM
+"@{RootModule='PnP.PowerShell.psm1';ModuleVersion='999.0.0';GUID='99999999-9999-9999-9999-999999999999';FunctionsToExport='*'}" | Set-Content -LiteralPath (Join-Path $fixtureModule 'PnP.PowerShell.psd1')
+$env:PSModulePath=(Join-Path $OutputDirectory 'modules')+[IO.Path]::PathSeparator+$env:PSModulePath
 function Run-Scenario([string]$Scenario) {
     $global:CopilotTestscenario=$Scenario
+    $env:COPILOT_TEST_SPO_TENANT=$global:CopilotTestspoTenant
+    $env:COPILOT_TEST_SCENARIO=$Scenario
     $token=ConvertTo-SecureString (New-FakeToken $global:CopilotTesttenant) -AsPlainText -Force
     & $target -TenantId $global:CopilotTesttenant -PowerPlatformAccessToken $token -OutputDirectory $OutputDirectory -SharePointAdminUrl 'https://example-admin.sharepoint.com' -SharePointClientId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -IncludeLicensedUsers -IncludeGroupMembers
 }
@@ -127,6 +158,8 @@ $checkpoint=Get-Content -LiteralPath (Join-Path $normal.Carpeta 'evidencias/prog
 Assert ($checkpoint.UltimaFuente -eq 'Cierre' -and $checkpoint.EstadoRecoleccion -eq $normal.EstadoRecoleccion) 'Checkpoint final consistente'
 Assert ($normal.EstadoRecoleccion -eq 'CompletoSegunPerfil') 'Captura automatica completa en alcance simulado'
 Assert ($normal.EstadoEvaluacion -eq 'Pendiente') 'Captura completa no equivale a controles cumplidos'
+$worker=Get-Content -LiteralPath (Join-Path $normal.Carpeta 'evidencias/SharePointProceso.json') -Raw | ConvertFrom-Json
+Assert ($worker.ProcesoId -ne $PID -and $worker.Terminado -eq $true) 'SharePoint ejecutado en otro proceso real'
 Assert (@($coverage | Where-Object {$_.Estado -notin @('Obtenido','Validacion manual')}).Count -eq 0) 'Sin fuentes inesperadamente fallidas'
 $csv=Import-Csv (Join-Path $normal.Carpeta 'agentes.csv')
 Assert ($csv.Nombre -eq "'=1+1") 'Neutralizacion CSV'
@@ -158,6 +191,19 @@ Assert ($diagnostic -notmatch 'SECRET-ERROR-BODY') 'No registrar cuerpos de erro
 $empty=Run-Scenario 'report-empty'
 $c=Import-Csv (Join-Path $empty.Carpeta 'cobertura.csv')
 Assert (($c | Where-Object Fuente -eq 'CopilotUsoDetalle').Estado -eq 'Obtenido' -and ($c | Where-Object Fuente -eq 'CopilotUsoDetalle').Registros -eq '0') 'CSV de reporte vacio con cabeceras validas es exito vacio'
+$badRequest=Run-Scenario 'inventory-http400'
+$badDiagnostic=Get-Content -LiteralPath (Join-Path $badRequest.Carpeta 'evidencias/diagnostico.json') -Raw
+$records=$badDiagnostic | ConvertFrom-Json
+Assert (($records | Where-Object Fuente -eq 'Agentes').CodigoServicio -eq 'InvalidQuery') 'Codigo estructurado de error de servicio conservado'
+Assert ($badDiagnostic -notmatch 'SECRET-ERROR-MESSAGE') 'No persistir mensaje completo del servicio'
+$notFound=Run-Scenario 'credits-http404'
+$c=Import-Csv -LiteralPath (Join-Path $notFound.Carpeta 'cobertura.csv')
+Assert (($c | Where-Object Fuente -eq 'CopilotCredits').Estado -eq 'NoDisponible' -and $notFound.ExitCode -eq 2) '404 de creditos no equivale a saldo cero'
+$crashed=Run-Scenario 'pnp-process-crash'
+$c=Import-Csv -LiteralPath (Join-Path $crashed.Carpeta 'cobertura.csv')
+Assert (($c | Where-Object Fuente -eq 'SharePointProceso').Estado -eq 'ErrorDeRuntime') 'Terminacion abrupta de hijo identificada'
+Assert ($crashed.ExitCode -eq 2 -and (Test-Path -LiteralPath (Join-Path $crashed.Carpeta 'manifiesto-sha256.csv'))) 'Padre sobrevive al hijo y cierra captura parcial con manifiesto'
+$env:COPILOT_TEST_SCENARIO='normal'
 $before=$global:CopilotTestcalls
 $badToken=ConvertTo-SecureString (New-FakeToken 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee') -AsPlainText -Force
 $bad=& $target -TenantId $global:CopilotTesttenant -PowerPlatformAccessToken $badToken -OutputDirectory $OutputDirectory
@@ -218,7 +264,7 @@ foreach ($name in @('Get-SafeError','Assert-Deadline','Invoke-Read','Get-PowerPl
     $f=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
     Invoke-Expression $f.Extent.Text
 }
-$authAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'lib/Authentication.ps1'),[ref]$t,[ref]$e)
+$authAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'lib/Tokens.ps1'),[ref]$t,[ref]$e)
 foreach ($name in @('Read-TokenClaims','ConvertFrom-SensitiveValue','Assert-PowerPlatformToken')) {
     $f=$authAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
     Invoke-Expression $f.Extent.Text

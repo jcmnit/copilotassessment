@@ -62,7 +62,7 @@ $script:checkpointEnabled=$false
 $script:authentication=[ordered]@{TenantId=$TenantId.ToString();OrigenTenant='Parametro obligatorio';GraphClientId=$null;PowerPlatformClientId=$null;OrigenPowerPlatform=$null;NoInteractive=[bool]$NoInteractive}
 . (Join-Path $PSScriptRoot 'lib/Core.ps1')
 $script:execution=[ordered]@{
-    Version='2.0.1';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
+    Version='2.0.2';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
     InicioUTC=$script:started.ToString('o');FinUTC=$null;EstadoRecoleccion='EnCurso';EstadoEvaluacion='NoEvaluado'
     SoloLecturaRemota=$true;PowerShell=$PSVersionTable.PSVersion.ToString();Sistema=$PSVersionTable.OS
     ScriptSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -94,8 +94,8 @@ try {
     . (Join-Path $PSScriptRoot 'lib/Agents.ps1')
     . (Join-Path $PSScriptRoot 'lib/Dataverse.ps1')
     Collect-Dataverse
-    . (Join-Path $PSScriptRoot 'lib/SharePoint.ps1')
-    Collect-SharePoint
+    . (Join-Path $PSScriptRoot 'lib/SharePoint.Process.ps1')
+    Collect-SharePointIsolated
     foreach ($pending in @(
         @('CatalogoM365Teams','Conciliar inventario con catalogos M365/Teams y bots clasicos; exportacion oficial.'),
         @('PublicacionALM','Soluciones, pipelines, aprobaciones y permisos de publicacion; no inferirlos de canales.'),
