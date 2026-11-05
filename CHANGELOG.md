@@ -1,5 +1,13 @@
 # Cambios
 
+## 2.0.3
+
+- Las cláusulas KQLOM usan `[ordered]` para colocar `$type` antes de los campos derivados, de acuerdo con la secuencia del serializador del SDK oficial.
+- Regresión con el lector polimórfico de .NET: discriminador tardío rechazado y JSON ordenado aceptado. Validación contra el tenant pendiente.
+- Diagnóstico versión 1.1 con consulta ordenada y opción `-IncludeClauseTests` para comparar filtro, orden y consulta mínima, además de créditos.
+- Se suprime la salida incidental de Set-MgRequestContext para que no oculte el objeto final de resultados en la consola.
+- No se modifican permisos o licencias y no se interpreta HTTP 404 de créditos como ausencia confirmada de capacidad.
+
 ## 2.0.2
 
 - SharePoint/PnP se ejecuta en un proceso PowerShell propio, separado de Graph, Azure y PowerApps; conserva el TenantId/RunId de la captura y no transfiere tokens.

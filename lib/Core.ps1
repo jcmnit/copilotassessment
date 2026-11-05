@@ -211,7 +211,9 @@ function Read-Inventory([string]$Type, [int]$Top=1000) {
     for ($page=0;$page -lt $MaxPages;$page++) {
         $options=@{Top=$Top}
         if ($skip) {$options.SkipToken=$skip}
-        $body=@{TableName='PowerPlatformResources';Clauses=@(@{'$type'='where';FieldName='type';Operator='in~';Values=@("'$Type'")},@{'$type'='orderby';FieldNamesAscDesc=@{name='asc'}});Options=$options}
+        # Los discriminadores de KQLOM deben emitirse antes de los campos derivados.
+        # Hashtable no garantiza ese orden; coincide con la serializacion del SDK oficial.
+        $body=[ordered]@{TableName='PowerPlatformResources';Clauses=@([ordered]@{'$type'='where';FieldName='type';Operator='in~';Values=@("'$Type'")},[ordered]@{'$type'='orderby';FieldNamesAscDesc=[ordered]@{name='asc'}});Options=$options}
         Save-Json ('consulta-'+$script:activeSource) ([ordered]@{Tabla=$body.TableName;Clausulas=$body.Clauses;Top=$Top;ContinuacionPresente=[bool]$skip;ApiVersion='2024-10-01';Nota='name es el identificador de recurso documentado; no se persiste el token de continuacion de la solicitud.'})
         $r=Invoke-Read PowerPlatform 'https://api.powerplatform.com/resourcequery/resources/query?api-version=2024-10-01' POST $body
         Save-Json ("pagina-$script:activeSource-{0:D4}" -f $page) $r

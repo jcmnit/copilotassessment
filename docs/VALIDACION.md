@@ -1,5 +1,13 @@
 # Validación
 
+## Versión 2.0.3
+
+PowerShell 7.4.6/Linux: **1116 aserciones y 525 llamadas simuladas** en la suite principal; **30 aserciones** en diagnóstico (tres solicitudes simuladas normales y cinco ampliadas); **28 aserciones** de recuperación. Resultado OK, sin conexiones reales a tenants.
+
+La regresión de serialización usa el lector polimórfico real de System.Text.Json: rechaza un `$type` colocado después de campos de la clase derivada y acepta la consulta ordenada. Se verifica también que el JSON efectivo del recolector emite `$type` primero en `where` y `orderby`, y que Set-MgRequestContext no agrega objetos incidentales a la salida final.
+
+El diagnóstico del cliente confirmó `take 1` HTTP 200 (un recurso) y filtro+orden HTTP 400 con `KQLOM format is wrong or it cannot be null`. Se contrastaron modelos y secuencia de serialización del SDK oficial `powerplatform-management` 2.0.3578.333; la distribución descargada se verificó contra el SHA-256 de PyPI. Esto respalda la corrección de orden, pero su aceptación por el endpoint del tenant todavía requiere la prueba de diagnóstico versión 1.1. El HTTP 404 de MCSMessages no tiene una causa definitiva identificada.
+
 ## Herramienta de diagnóstico acotado Power Platform
 
 `tests/Test-PowerPlatformProbe.ps1`: **14 aserciones y tres solicitudes simuladas, OK** en PowerShell 7.4.6/Linux. Verifica lectura de errores de validación Problem Details desde una respuesta byte[], comparación de consultas actual/mínima, preservación de HTTP/código de servicio, redacción del token conocido y omisión de recursos de inventario devueltos correctamente. No se ejecutó contra el tenant; el diagnóstico real requiere ejecución autorizada del usuario.

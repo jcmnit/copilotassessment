@@ -21,7 +21,7 @@ function New-FakeToken([string]$Tid,[string]$Audience='https://api.powerplatform
 function Import-Module { [CmdletBinding()]param([Parameter(Position=0)]$Name) }
 function Get-MgContext {[pscustomobject]@{TenantId=$global:CopilotTestgraphTenant;Environment='Global';ClientId='dddddddd-dddd-dddd-dddd-dddddddddddd';AuthType='Delegated';Scopes=@('Reports.Read.All')}}
 function Connect-MgGraph {[CmdletBinding()]param($TenantId,$ClientId,$Scopes,$ContextScope,[switch]$NoWelcome) $global:CopilotTestgraphTenant=$TenantId}
-function Set-MgRequestContext {[CmdletBinding()]param($ClientTimeout)}
+function Set-MgRequestContext {[CmdletBinding()]param($ClientTimeout) [pscustomobject]@{ClientTimeout=$ClientTimeout;MaxRetry=3}}
 function Get-AzContext {[pscustomobject]@{Tenant=@{Id=$global:CopilotTesttenant};Account=@{Type='User'};Environment=@{Name='AzureCloud'}}}
 function Get-AzAccessToken {[CmdletBinding()]param($ResourceUrl,$TenantId) [pscustomobject]@{Token=(New-FakeToken $global:CopilotTesttenant $ResourceUrl)}}
 function Add-PowerAppsAccount {[CmdletBinding()]param($TenantID)}
@@ -76,6 +76,7 @@ function Invoke-RestMethod {
     if ($Uri -like '*/resourcequery/resources/query*') {
         Assert ($Method -eq 'POST') 'POST solo consulta de inventario'
         $bodyObject=$Body | ConvertFrom-Json
+        Assert ($Body -match '"Clauses":\[\{"\$type":"where"' -and $Body -match '\{"\$type":"orderby","FieldNamesAscDesc"') 'Discriminador $type primero en JSON real enviado'
         Assert ($bodyObject.Clauses[1].FieldNamesAscDesc.name -eq 'asc' -and -not $bodyObject.Clauses[1].FieldNamesAscDesc.id) 'Inventario ordenado por identificador name documentado'
         if ($global:CopilotTestscenario -eq 'inventory-http400') {
             $exception=[Exception]::new('fixture')
@@ -152,6 +153,7 @@ function Run-Scenario([string]$Scenario) {
     & $target -TenantId $global:CopilotTesttenant -PowerPlatformAccessToken $token -OutputDirectory $OutputDirectory -SharePointAdminUrl 'https://example-admin.sharepoint.com' -SharePointClientId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -IncludeLicensedUsers -IncludeGroupMembers
 }
 $normal=Run-Scenario 'normal'
+Assert (@($normal).Count -eq 1) 'No filtrar objetos de configuracion Graph a la salida del recolector'
 $coverage=Import-Csv (Join-Path $normal.Carpeta 'cobertura.csv')
 Assert (Test-Path -LiteralPath (Join-Path $normal.Carpeta 'evidencias/progreso.json')) 'Progreso persistente'
 $checkpoint=Get-Content -LiteralPath (Join-Path $normal.Carpeta 'evidencias/progreso.json') -Raw | ConvertFrom-Json

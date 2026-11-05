@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$Version='2.0.2',
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$Version='2.0.3',
     [string]$OutputDirectory=(Join-Path $PSScriptRoot 'dist')
 )
 $ErrorActionPreference='Stop'

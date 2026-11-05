@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 <#
 .SYNOPSIS
-Diagnostico acotado de lectura: dos consultas de inventario y GET de MCSMessages.
+Diagnostico acotado de lectura: inventario y GET de MCSMessages; cinco pruebas con IncludeClauseTests.
 .DESCRIPTION
 Solo Az.Accounts. No carga Graph/PnP, no modifica recursos ni permisos y no exporta
 tokens, cabeceras Authorization, respuestas completas o datos de inventario.
@@ -11,7 +11,8 @@ Conserva mensajes de error saneados y errores de validacion para diagnosticar 40
 param(
     [Parameter(Mandatory)][guid]$TenantId,
     [string]$OutputDirectory=(Join-Path (Get-Location) 'Diagnostico-PowerPlatform'),
-    [switch]$NoInteractive
+    [switch]$NoInteractive,
+    [switch]$IncludeClauseTests
 )
 $ErrorActionPreference='Stop'
 if ($TenantId -eq [guid]::Empty) {throw 'TenantId vacio.'}
@@ -52,22 +53,30 @@ try {
     $directory=Join-Path $OutputDirectory ([datetime]::UtcNow.ToString('yyyyMMddTHHmmssZ')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))
     $null=New-Item -ItemType Directory -Path $directory
     $directory=(Get-Item -LiteralPath $directory).FullName
-    $current=@{TableName='PowerPlatformResources';Clauses=@(@{'$type'='where';FieldName='type';Operator='in~';Values=@("'microsoft.copilotstudio/agents'")},@{'$type'='orderby';FieldNamesAscDesc=@{name='asc'}});Options=@{Top=1}}
-    $minimal=@{TableName='PowerPlatformResources';Clauses=@(@{'$type'='take';TakeCount=1});Options=@{Top=1}}
+    $where=[ordered]@{'$type'='where';FieldName='type';Operator='in~';Values=@("'microsoft.copilotstudio/agents'")}
+    $sort=[ordered]@{'$type'='orderby';FieldNamesAscDesc=[ordered]@{name='asc'}}
+    $current=[ordered]@{TableName='PowerPlatformResources';Clauses=@($where,$sort);Options=@{Top=1}}
+    $minimal=[ordered]@{TableName='PowerPlatformResources';Clauses=@([ordered]@{'$type'='take';TakeCount=1});Options=@{Top=1}}
     $operations=@(
-        @{Name='InventarioConsultaActual';Method='POST';Path='/resourcequery/resources/query';Body=$current},
+        @{Name='InventarioFormatoOrdenado';Method='POST';Path='/resourcequery/resources/query';Body=$current},
         @{Name='InventarioConsultaMinima';Method='POST';Path='/resourcequery/resources/query';Body=$minimal},
         @{Name='EntitlementMCSMessages';Method='GET';Path='/licensing/entitlements/MCSMessages';Body=$null}
     )
+    if ($IncludeClauseTests) {
+        $operations=@($operations[0],
+            @{Name='InventarioSoloWhere';Method='POST';Path='/resourcequery/resources/query';Body=[ordered]@{TableName='PowerPlatformResources';Clauses=@($where);Options=@{Top=1}}},
+            @{Name='InventarioSoloOrderBy';Method='POST';Path='/resourcequery/resources/query';Body=[ordered]@{TableName='PowerPlatformResources';Clauses=@($sort);Options=@{Top=1}}},
+            $operations[1],$operations[2])
+    }
     $results=[Collections.Generic.List[object]]::new()
     $file=Join-Path $directory 'diagnostico-api.json'
-    $report=[ordered]@{Version='1.0';TenantId=$TenantId.ToString();UTC=[datetime]::UtcNow.ToString('o');ClientId=$(if ($claims.azp) {$claims.azp} else {$claims.appid});ScopesDeclarados=[string]$claims.scp;PowerShell=$PSVersionTable.PSVersion.ToString();Nota='Tres consultas de lectura; los scopes declarados no acreditan autorizacion efectiva. No contiene tokens, respuestas completas ni datos de inventario.';Resultados=@()}
+    $report=[ordered]@{Version='1.1';TenantId=$TenantId.ToString();UTC=[datetime]::UtcNow.ToString('o');ClientId=$(if ($claims.azp) {$claims.azp} else {$claims.appid});ScopesDeclarados=[string]$claims.scp;PowerShell=$PSVersionTable.PSVersion.ToString();DiscriminadorPrimero=$true;Nota='Consultas de lectura, con $type primero en cada clausula. Los scopes declarados no acreditan autorizacion efectiva. No contiene tokens, respuestas completas ni datos de inventario.';Resultados=@()}
     foreach ($op in $operations) {
         Write-Host ('Probando '+$op.Name+' ...')
         $requestId=[guid]::NewGuid().ToString()
         $argsWeb=@{Uri=('https://api.powerplatform.com'+$op.Path+'?api-version=2024-10-01');Method=$op.Method;Headers=@{Authorization="Bearer $token";'x-ms-client-request-id'=$requestId};SkipHttpErrorCheck=$true;MaximumRedirection=0;TimeoutSec=90;ErrorAction='Stop'}
         if ($op.Method -eq 'POST') {$argsWeb.ContentType='application/json; charset=utf-8';$argsWeb.Body=ConvertTo-Json -InputObject $op.Body -Depth 20 -Compress}
-        $result=[ordered]@{Prueba=$op.Name;Metodo=$op.Method;Ruta=$op.Path;SolicitudId=$requestId;HTTP=$null;TipoContenido=$null;CodigoServicio=$null;Titulo=$null;MensajeServicio=$null;ErroresValidacion=@();CamposRespuesta=@();RegistrosDevueltos=$null;TipoExcepcion=$null}
+        $result=[ordered]@{Prueba=$op.Name;Metodo=$op.Method;Ruta=$op.Path;Consulta=$op.Body;SolicitudId=$requestId;HTTP=$null;TipoContenido=$null;CodigoServicio=$null;Titulo=$null;MensajeServicio=$null;ErroresValidacion=@();CamposRespuesta=@();RegistrosDevueltos=$null;TipoExcepcion=$null}
         try {
             $response=Invoke-WebRequest @argsWeb
             $result.HTTP=[int]$response.StatusCode

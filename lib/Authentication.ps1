@@ -9,7 +9,7 @@ function Connect-AssessmentGraph([guid]$TargetTenant) {
     if ($GraphClientId -ne [guid]::Empty) { $login.ClientId = $GraphClientId.ToString() }
     Write-Host 'Inicie sesion en Microsoft Graph con la cuenta del tenant que desea levantar.'
     $null = Connect-MgGraph @login
-    Set-MgRequestContext -ClientTimeout $RequestTimeoutSeconds -ErrorAction Stop
+    $null=Set-MgRequestContext -ClientTimeout $RequestTimeoutSeconds -ErrorAction Stop
     return Get-MgContext
 }
 function Connect-AssessmentAzure([guid]$TargetTenant) {
@@ -49,7 +49,7 @@ if (-not $SkipGraph) {
         if (-not $ctx -or $ctx.TenantId -ne $TenantId.ToString() -or $ctx.Environment -ne 'Global' -or
             ($GraphClientId -ne [guid]::Empty -and $ctx.ClientId -ne $GraphClientId.ToString())) { $ctx = Connect-AssessmentGraph $TenantId }
         if (-not $ctx -or $ctx.TenantId -ne $TenantId.ToString() -or $ctx.Environment -ne 'Global' -or $ctx.AuthType -ne 'Delegated' -or ($GraphClientId -ne [guid]::Empty -and $ctx.ClientId -ne $GraphClientId.ToString())) { throw 'Sesion Graph ausente o de otro tenant/nube.' }
-        Set-MgRequestContext -ClientTimeout $RequestTimeoutSeconds -ErrorAction Stop
+        $null=Set-MgRequestContext -ClientTimeout $RequestTimeoutSeconds -ErrorAction Stop
         $script:authentication.GraphClientId = $ctx.ClientId
         $script:authentication.GraphScopes = @($ctx.Scopes)
         $script:graphReady = $true

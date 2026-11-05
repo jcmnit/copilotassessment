@@ -1,4 +1,4 @@
-# Levantamiento de Microsoft 365 Copilot — v2.0.2
+# Levantamiento de Microsoft 365 Copilot — v2.0.3
 
 Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
 
@@ -110,6 +110,20 @@ pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.2\Test-PowerPlatformApi.ps1' -
 ```
 
 El archivo `diagnostico-api.json` conserva estado HTTP y mensajes de error saneados, incluidos `title/detail/errors` de respuestas de validación Problem Details. No conserva cuerpos completos, cabeceras Authorization, tokens ni datos devueltos por inventarios correctos. Revisa el archivo antes de compartirlo; puede incluir nombres de campos y detalles técnicos del servicio. Comparar las dos consultas ayuda a distinguir un problema de construcción de consulta de un rechazo común a ambas, sin asumir su causa anticipadamente. Los scopes declarados en el token no acreditan autorización efectiva.
+
+### Corrección del orden de metadatos KQLOM en 2.0.3
+
+El diagnóstico del cliente mostró HTTP 200 para `take 1` y HTTP 400 con texto `KQLOM format is wrong or it cannot be null` para la consulta con filtro/orden. Esa respuesta permite concentrar el diagnóstico en la construcción de la consulta, sin justificar cambios de licencias o permisos para ese 400.
+
+La versión 2.0.3 construye las cláusulas con diccionarios ordenados para emitir `$type` primero, como hace el serializador del SDK oficial. Una tabla hash regular no garantiza ese orden. Se verificó localmente que el lector polimórfico de System.Text.Json rechaza un discriminador tardío y acepta el JSON ordenado; esto no sustituye validar el comportamiento del endpoint real.
+
+El diagnóstico acotado versión 1.1 utiliza también el formato ordenado. Con `-IncludeClauseTests` realiza **cinco consultas**: filtro+orden, solo filtro, solo orden, `take 1` y créditos. No interpreta una fila de control como inventario completo.
+
+```powershell
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.3\Test-PowerPlatformApi.ps1' -TenantId 'GUID-TENANT' -OutputDirectory 'C:\pw7\Copilot\Diagnostico-PowerPlatform' -IncludeClauseTests
+```
+
+Antes de repetir el levantamiento completo, confirmar que `InventarioFormatoOrdenado` responde HTTP 200. Si sigue devolviendo 400, comparar `InventarioSoloWhere` y `InventarioSoloOrderBy` y conservar sus mensajes saneados. El 404 de MCSMessages sigue siendo un problema de disponibilidad no determinado y no prueba saldo cero.
 
 ## Resultados y análisis offline
 
