@@ -122,6 +122,9 @@ function Run-Scenario([string]$Scenario) {
 }
 $normal=Run-Scenario 'normal'
 $coverage=Import-Csv (Join-Path $normal.Carpeta 'cobertura.csv')
+Assert (Test-Path -LiteralPath (Join-Path $normal.Carpeta 'evidencias/progreso.json')) 'Progreso persistente'
+$checkpoint=Get-Content -LiteralPath (Join-Path $normal.Carpeta 'evidencias/progreso.json') -Raw | ConvertFrom-Json
+Assert ($checkpoint.UltimaFuente -eq 'Cierre' -and $checkpoint.EstadoRecoleccion -eq $normal.EstadoRecoleccion) 'Checkpoint final consistente'
 Assert ($normal.EstadoRecoleccion -eq 'CompletoSegunPerfil') 'Captura automatica completa en alcance simulado'
 Assert ($normal.EstadoEvaluacion -eq 'Pendiente') 'Captura completa no equivale a controles cumplidos'
 Assert (@($coverage | Where-Object {$_.Estado -notin @('Obtenido','Validacion manual')}).Count -eq 0) 'Sin fuentes inesperadamente fallidas'

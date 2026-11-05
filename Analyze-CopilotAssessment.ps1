@@ -36,6 +36,7 @@ foreach ($entry in $manifest) {
 }
 if ('evidencias/ejecucion.json' -notin @($manifest.Archivo -replace '\\','/')) {throw 'Metadatos no incluidos en manifiesto.'}
 $execution=Read-Evidence 'ejecucion'
+$isRecovered=$execution.Modo -eq 'RecuperacionOffline'
 $coverage=@(Read-Evidence 'cobertura')
 if (-not $execution.TenantId -or -not $execution.RunId) {throw 'Metadatos incompletos.'}
 if ($execution.RunId -notmatch '^\d{8}T\d{6}Z-[0-9a-f]{8}$' -or $execution.ReportPeriod -notin @('D7','D28','D90','D180') -or $execution.CopilotReportVersion -ne 'v2' -or $execution.EstadoRecoleccion -notin @('Fallido','Preflight','Parcial','CompletoSegunPerfil')) {throw 'Formato de metadatos de captura no admitido.'}
@@ -90,7 +91,8 @@ foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $RunDirectory 'evidenc
     foreach ($link in @($data.Registros)) {
         $expired=$false
         $expiry=[datetimeoffset]::MinValue
-        if ($link.Expiration -and [datetimeoffset]::TryParse([string]$link.Expiration,[ref]$expiry)) {$expired=$expiry -le [datetimeoffset]$execution.FinUTC}
+        $referenceDate=if ($execution.FinUTC) {[datetimeoffset]$execution.FinUTC} else {[datetimeoffset]$execution.InicioUTC}
+        if ($link.Expiration -and [datetimeoffset]::TryParse([string]$link.Expiration,[ref]$expiry)) {$expired=$expiry -le $referenceDate}
         if ($link.Scope -eq 'anonymous' -and -not $expired) {Add-Finding 'SP-ANON' 'Alta' $link.ScopeId 'Enlace anonimo observado, sin expiracion acreditada anterior a la captura. No implica que Copilot lo indexe o lo utilice.' $relative 'Confirmar contenido, excepcion y expiracion; revisar exposicion publica.'}
         if ($link.Scope -eq 'organization' -and -not $expired) {Add-Finding 'SP-ORG-LINK' 'Media' $link.ScopeId 'Enlace de organizacion observado; requiere posesion del enlace y controles aplicables.' $relative 'Validar audiencia prevista; no equiparar enlace a acceso directo universal.'}
     }
@@ -158,10 +160,12 @@ $raci=@(
 Save-Csv 'raci-propuesta' $raci
 $plan=@($findings | ForEach-Object {[pscustomobject]@{ControlId=$_.ControlId;Prioridad=$_.Prioridad;Recurso=$_.Recurso;Accion=$_.Accion;Evidencia=$_.Evidencia;Estado='Propuesto; no aplicado'}})
 Save-Csv 'plan-acciones' $plan
+$recoveryNotice=if ($isRecovered) {'<p><strong>RECUPERACION OFFLINE DE CAPTURA INTERRUMPIDA.</strong> Informe parcial. No se conoce la causa del cierre ni se acredita completitud de las fuentes. Los hashes se generaron al recuperar; no verifican integridad anterior. FinUTC original no se completa retroactivamente. Los hallazgos requieren validar la evidencia recuperada.</p>'} else {''}
 $html=@"
 <!doctype html><html lang="es"><meta charset="utf-8"><title>Evaluacion Copilot</title>
 <style>body{font:15px system-ui;margin:32px;color:#172b42}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd4df;padding:7px;text-align:left;overflow-wrap:anywhere}th{background:#eaf0f8}</style>
 <h1>Microsoft 365 Copilot: levantamiento y propuesta de gobierno</h1>
+$recoveryNotice
 <p>Tenant: $($execution.TenantId) | RunId: $($execution.RunId). Captura: $($execution.EstadoRecoleccion). Evaluacion: $evaluation.</p>
 <p>Periodo Copilot: $($execution.ReportPeriod), version $($execution.CopilotReportVersion). Los reportes preservan su fecha de actualizacion. Alcance SharePoint acotado por sitios, limites y permisos disponibles; no incluye OneDrive ni lectura de contenido. Permisos amplios son indicios para revisar, no prueba de filtracion ni de acceso por Copilot.</p>
 <h2>Adopcion por aplicacion</h2>$($metrics.ToArray() | ConvertTo-Html -Fragment)
@@ -173,6 +177,6 @@ $html=@"
 <p>El manifiesto detecta cambios frente a hashes conservados; no es firma digital. Proteger evidencias y decisiones manuales en ubicacion corporativa autorizada. Una ejecucion unica no acredita funcionamiento historico de los controles.</p></html>
 "@
 [IO.File]::WriteAllText((Join-Path $script:runPath 'informe.html'),$html,[Text.UTF8Encoding]::new($true))
-Save-Json 'analisis' ([ordered]@{TenantId=$execution.TenantId;RunId=$execution.RunId;AnalizadoUTC=[datetime]::UtcNow.ToString('o');EstadoEvaluacion=$evaluation;IntegridadCaptura='Verificada';Hallazgos=$findings.Count;ControlesPendientes=@($controlRows | Where-Object Estado -eq 'NoEvaluado').Count;Version='2.0.0';AnalizadorSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash})
+Save-Json 'analisis' ([ordered]@{TenantId=$execution.TenantId;RunId=$execution.RunId;AnalizadoUTC=[datetime]::UtcNow.ToString('o');EstadoEvaluacion=$evaluation;IntegridadCaptura=$(if ($isRecovered) {'Verificada solo desde recuperacion; origen no verificable'} else {'Verificada frente al manifiesto conservado'});Hallazgos=$findings.Count;ControlesPendientes=@($controlRows | Where-Object Estado -eq 'NoEvaluado').Count;Version='2.0.1';AnalizadorSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash})
 Write-Manifest
 [pscustomobject]@{EstadoEvaluacion=$evaluation;Informe=(Join-Path $script:runPath 'informe.html');CarpetaAnalisis=$script:runPath;Hallazgos=$findings.Count}

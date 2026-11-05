@@ -1,4 +1,4 @@
-# Levantamiento de Microsoft 365 Copilot — v2.0.0
+# Levantamiento de Microsoft 365 Copilot — v2.0.1
 
 Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
 
@@ -88,6 +88,30 @@ Reanalizar sin conectarse a Microsoft:
 ```
 
 El analizador verifica el manifiesto antes de leer la captura y crea una carpeta nueva; no modifica las evidencias. Los hashes detectan cambios frente al manifiesto conservado, pero no sustituyen firma digital o almacenamiento con control de acceso.
+
+## Captura interrumpida o ventana cerrada sin manifiesto
+
+Si `ejecucion.json` conserva `EstadoRecoleccion=EnCurso` y no tiene `FinUTC`, no existe cierre acreditado. Cerrar una ventana, reiniciar el equipo o terminar el proceso puede perder el error de la sesión. La ausencia del cierre no determina por sí sola la causa y no debe interpretarse como finalización satisfactoria.
+
+La versión 2.0.1 guarda cobertura, diagnóstico y progreso después de cada estado, usando reemplazo atómico de JSON. No garantiza ejecutar `finally` ante una terminación del proceso, un fallo del runtime o un corte del equipo. El lanzador guarda además errores sanitizados cuando su `catch` llega a ejecutarse; no registra tokens ni cuerpos de respuesta.
+
+**Para recuperar lo ya guardado no repita la consulta al tenant ni genere un manifiesto dentro del original.** Extraiga el paquete nuevo en otra carpeta y ejecute el recuperador contra la carpeta antigua. Ejemplo de una sola línea, reemplazando rutas:
+
+```powershell
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.1\Recover-CopilotAssessment.ps1' -RunDirectory 'C:\pw7\Copilot\Resultados\TENANT\RUN'
+```
+
+El recuperador no requiere autenticación ni módulos Microsoft y no realiza llamadas de red. Crea una carpeta hermana cuyo nombre contiene `-recuperado-`, conserva los archivos originales sin modificación y analiza una copia. Mantiene `FinUTC` original sin inventar un cierre; registra `RecuperacionUTC` por separado. Conserva los JSON no interpretables en `archivos-no-interpretados/` dentro de la copia.
+
+El informe lleva una advertencia destacada y toda fuente recuperada requiere validación. El manifiesto nuevo acredita solo el estado de la copia **desde la recuperación**, no la integridad histórica ni la completitud de las consultas. No se admite recuperar una captura que ya tenga manifiesto: una comprobación fallida no debe eludirse mediante regeneración de hashes.
+
+Para futuras capturas interactivas puede iniciarse el recolector directo con `pwsh -NoExit -NoProfile -File ...`; mantiene la sesión tras terminar el archivo, salvo una terminación explícita o un fallo del proceso. No confundir este modo con el lanzador de automatización `Invoke-CopilotAssessment.ps1`, que utiliza códigos de salida y `exit`. Los errores locales del lanzador se guardan en la carpeta de salida configurada o, si no puede leerse la configuración, en `diagnostico-local/` junto al programa.
+
+Prueba específica de recuperación, sin tenant:
+
+```powershell
+pwsh -NoProfile -File ./tests/Test-Recovery.ps1
+```
 
 ## Evidencia adicional y decisiones humanas
 

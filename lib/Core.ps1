@@ -15,7 +15,11 @@ function Has-Field($Object, [string]$Name) {
 function Save-Json([string]$Name, $Data) {
     if ($Name -notmatch '^[\w.-]+$') { throw 'Nombre de evidencia no permitido.' }
     $path = Join-Path $script:evidencePath ($Name + '.json')
-    [IO.File]::WriteAllText($path, (ConvertTo-Json -InputObject $Data -Depth 100), [Text.UTF8Encoding]::new($true))
+    $temporary=$path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try {
+        [IO.File]::WriteAllText($temporary, (ConvertTo-Json -InputObject $Data -Depth 100), [Text.UTF8Encoding]::new($true))
+        [IO.File]::Move($temporary,$path,$true)
+    } finally {if ([IO.File]::Exists($temporary)) {[IO.File]::Delete($temporary)}}
 }
 function Save-Csv([string]$Name, $Rows) {
     $items = @($Rows)
@@ -34,6 +38,14 @@ function Save-Csv([string]$Name, $Rows) {
 }
 function Add-Status([string]$Name, [string]$State, [int]$Count, [string]$Detail) {
     $script:status.Add([pscustomobject]@{TenantId=$TenantId.ToString();RunId=$script:runId;Fuente=$Name;Estado=$State;Registros=$Count;Detalle=$Detail;UTC=[datetime]::UtcNow.ToString('o')})
+    if ($script:checkpointEnabled) {
+        try {
+            Save-Json 'cobertura' $script:status.ToArray()
+            Save-Json 'diagnostico' $script:diagnostics.ToArray()
+            Save-Json 'consultas' $script:requests.ToArray()
+            Save-Json 'progreso' ([ordered]@{UTC=[datetime]::UtcNow.ToString('o');UltimaFuente=$Name;Estado=$State;EstadoRecoleccion='EnCurso';Nota='Checkpoint; no sustituye el cierre ni el manifiesto de captura.'})
+        } catch {Write-Warning ('No se pudo guardar checkpoint; tipo='+$_.Exception.GetType().Name+'. Conservar la carpeta para diagnostico.')}
+    }
 }
 function Get-SafeError($Record) {
     $http = Get-Field $Record.Exception 'Response.StatusCode'
@@ -236,7 +248,7 @@ function Read-GraphReport([string]$Function,[string[]]$RequiredHeaders) {
     foreach ($row in $rows) {$row}
 }
 function Write-Manifest {
-    $rows=@(Get-ChildItem -LiteralPath $script:runPath -File -Recurse | Where-Object Name -ne 'manifiesto-sha256.csv' | ForEach-Object {
+    $rows=@(Get-ChildItem -LiteralPath $script:runPath -File -Recurse -Force | Where-Object Name -ne 'manifiesto-sha256.csv' | ForEach-Object {
         [pscustomobject]@{Archivo=[IO.Path]::GetRelativePath($script:runPath,$_.FullName);SHA256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
     })
     Save-Csv 'manifiesto-sha256' $rows

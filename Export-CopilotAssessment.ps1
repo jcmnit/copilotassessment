@@ -58,10 +58,11 @@ $script:requests=[Collections.Generic.List[object]]::new()
 $script:diagnostics=[Collections.Generic.List[object]]::new()
 $script:sourcePages=0;$script:activeSource=$null
 $script:ppToken=$null;$script:graphReady=$false
+$script:checkpointEnabled=$false
 $script:authentication=[ordered]@{TenantId=$TenantId.ToString();OrigenTenant='Parametro obligatorio';GraphClientId=$null;PowerPlatformClientId=$null;OrigenPowerPlatform=$null;NoInteractive=[bool]$NoInteractive}
 . (Join-Path $PSScriptRoot 'lib/Core.ps1')
 $script:execution=[ordered]@{
-    Version='2.0.0';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
+    Version='2.0.1';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
     InicioUTC=$script:started.ToString('o');FinUTC=$null;EstadoRecoleccion='EnCurso';EstadoEvaluacion='NoEvaluado'
     SoloLecturaRemota=$true;PowerShell=$PSVersionTable.PSVersion.ToString();Sistema=$PSVersionTable.OS
     ScriptSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -75,6 +76,7 @@ $script:execution.Opciones.MaxDataversePrincipals=$MaxDataversePrincipals
 $script:execution.Opciones.SharePointAdminUrl=[string]$SharePointAdminUrl
 $script:execution.Opciones.SharePointClientId=$SharePointClientId.ToString()
 Save-Json 'ejecucion' $script:execution
+$script:checkpointEnabled=$true
 try {
     . (Join-Path $PSScriptRoot 'lib/Authentication.ps1')
     if ($script:graphReady) {
@@ -109,6 +111,7 @@ try {
     Add-Status 'Ejecucion' $safe.Estado 0 ('Captura interrumpida; tipo='+$safe.Tipo+'. Evidencia conservada; ver diagnostico.')
     $script:diagnostics.Add([pscustomobject]@{Fuente='Ejecucion';HTTP=$safe.HTTP;Tipo=$safe.Tipo;RequestId=$safe.RequestId;UTC=[datetime]::UtcNow.ToString('o')})
 } finally {
+    $script:checkpointEnabled=$false
     $script:ppToken=$null;$PowerPlatformAccessToken=$null
     $script:dataverseTokens=@{}
     $script:execution.FinUTC=[datetime]::UtcNow.ToString('o')
@@ -120,6 +123,7 @@ try {
     $script:execution.EstadoRecoleccion=if (-not $dataObtained.Count) {'Fallido'} elseif ($PreflightOnly) {'Preflight'} elseif ($missing.Count -or $failed.Count) {'Parcial'} else {'CompletoSegunPerfil'}
     $script:execution.FuentesRequeridasPendientes=$missing
     Save-Json 'ejecucion' $script:execution
+    Save-Json 'progreso' ([ordered]@{UTC=[datetime]::UtcNow.ToString('o');UltimaFuente='Cierre';EstadoRecoleccion=$script:execution.EstadoRecoleccion;Nota='Consultar cobertura y manifiesto.'})
     Save-Json 'cobertura' $script:status.ToArray()
     Save-Json 'diagnostico' $script:diagnostics.ToArray()
     Save-Csv 'cobertura' $script:status.ToArray()

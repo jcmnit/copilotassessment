@@ -6,3 +6,4 @@ dist/
 tenant-*.json
 !docs/tenant.example.json
 *.log
+diagnostico-local/

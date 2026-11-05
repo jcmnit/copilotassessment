@@ -1,4 +1,12 @@
-# Validación de v2.0.0
+# Validación
+
+## Versión 2.0.1
+
+Pruebas locales en PowerShell 7.4.6/Linux, sin tenant: suite principal **811 aserciones y 435 llamadas simuladas, OK**; suite adicional `tests/Test-Recovery.ps1`, **28 aserciones, OK**. Verifica copia independiente, originales intactos, estado parcial, FinUTC original sin cambios, JSON inválido conservado, fuentes ausentes no equiparadas a inventario vacío, hashes desde recuperación, advertencia en informe, reanálisis offline y rechazo de recuperación sobre una captura con manifiesto.
+
+La suite principal verifica además progreso persistente y checkpoint final coherente. La recuperación de la carpeta real del cliente y la causa del cierre en Windows/PowerShell 7.6.9 no se han validado aquí. No se afirma que el cambio corrija una terminación del runtime o del equipo.
+
+## Versión 2.0.0
 
 Validación local del código en PowerShell 7.4.6 sobre Linux. No se utilizaron cuentas, credenciales ni conexiones reales a tenants Microsoft 365.
 
