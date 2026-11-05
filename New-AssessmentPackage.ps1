@@ -13,9 +13,9 @@ $null=New-Item -ItemType Directory -Path $stage
 try {
     # Lista positiva: nunca empaquetar resultados, configuraciones locales, credenciales o .git.
     $files=@(
-        'Export-CopilotAssessment.ps1','Analyze-CopilotAssessment.ps1','Recover-CopilotAssessment.ps1','Import-AssessmentEvidence.ps1','Invoke-CopilotAssessment.ps1','Invoke-SharePointWorker.ps1','New-AssessmentPackage.ps1','README.md','CHANGELOG.md','.gitignore',
+        'Export-CopilotAssessment.ps1','Analyze-CopilotAssessment.ps1','Recover-CopilotAssessment.ps1','Import-AssessmentEvidence.ps1','Invoke-CopilotAssessment.ps1','Invoke-SharePointWorker.ps1','Test-PowerPlatformApi.ps1','New-AssessmentPackage.ps1','README.md','CHANGELOG.md','.gitignore',
         'lib/Core.ps1','lib/Authentication.ps1','lib/Tokens.ps1','lib/Agents.ps1','lib/Dataverse.ps1','lib/SharePoint.ps1','lib/SharePoint.Process.ps1','lib/OfflinePolicies.ps1',
-        'docs/PERMISOS-Y-FUENTES.md','docs/VALIDACION.md','docs/tenant.example.json','tests/Test-Offline.ps1','tests/Test-Recovery.ps1',
+        'docs/PERMISOS-Y-FUENTES.md','docs/VALIDACION.md','docs/tenant.example.json','tests/Test-Offline.ps1','tests/Test-Recovery.ps1','tests/Test-PowerPlatformProbe.ps1',
         'legacy/v1.1.0/Export-CopilotAssessment.ps1','legacy/v1.1.0/GUIA.txt','legacy/v1.1.0/Test-Offline.ps1'
     )
     foreach ($file in $files) {

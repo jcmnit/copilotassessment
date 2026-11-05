@@ -101,6 +101,16 @@ pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.2\Export-CopilotAssessment.ps1
 
 Si persiste un 400, revisar el código estructurado y la consulta registrada antes de modificar roles o consentimiento. Si persiste el 404 de créditos, contrastar capacidad/licenciamiento en PPAC y conservar el estado desconocido en el informe.
 
+### Diagnóstico acotado cuando CodigoServicio aparece vacío
+
+`Test-PowerPlatformApi.ps1` evita repetir todo el levantamiento: usa solo Az.Accounts y realiza tres solicitudes de lectura, dos POST de inventario (consulta actual y consulta mínima `take 1`) y un GET de MCSMessages. No carga Graph/PnP ni modifica datos, roles, consentimiento, aplicaciones o licencias.
+
+```powershell
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.2\Test-PowerPlatformApi.ps1' -TenantId 'GUID-TENANT' -OutputDirectory 'C:\pw7\Copilot\Diagnostico-PowerPlatform'
+```
+
+El archivo `diagnostico-api.json` conserva estado HTTP y mensajes de error saneados, incluidos `title/detail/errors` de respuestas de validación Problem Details. No conserva cuerpos completos, cabeceras Authorization, tokens ni datos devueltos por inventarios correctos. Revisa el archivo antes de compartirlo; puede incluir nombres de campos y detalles técnicos del servicio. Comparar las dos consultas ayuda a distinguir un problema de construcción de consulta de un rechazo común a ambas, sin asumir su causa anticipadamente. Los scopes declarados en el token no acreditan autorización efectiva.
+
 ## Resultados y análisis offline
 
 - `evidencias/*.json`: respuestas, páginas, identidad, cobertura, diagnóstico, versiones y parámetros no secretos.

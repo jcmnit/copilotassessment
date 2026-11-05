@@ -1,5 +1,9 @@
 # Validación
 
+## Herramienta de diagnóstico acotado Power Platform
+
+`tests/Test-PowerPlatformProbe.ps1`: **14 aserciones y tres solicitudes simuladas, OK** en PowerShell 7.4.6/Linux. Verifica lectura de errores de validación Problem Details desde una respuesta byte[], comparación de consultas actual/mínima, preservación de HTTP/código de servicio, redacción del token conocido y omisión de recursos de inventario devueltos correctamente. No se ejecutó contra el tenant; el diagnóstico real requiere ejecución autorizada del usuario.
+
 ## Versión 2.0.2
 
 Suite principal: **1046 aserciones y 525 llamadas simuladas, OK**, PowerShell 7.4.6/Linux. Los workers utilizan procesos `pwsh` reales con un módulo PnP ficticio creado en una carpeta temporal; no cargan PnP real ni se conectan al tenant. Se verifica PID diferente, captura de permisos/enlaces, cobertura común y supervivencia/cierre del padre cuando un hijo termina con código 77. Esta terminación controlada prueba el límite de proceso; no reproduce el stack overflow interno de PnP.
