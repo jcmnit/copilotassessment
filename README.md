@@ -16,6 +16,14 @@ Ver [permisos y fuentes](docs/PERMISOS-Y-FUENTES.md). Roles administrativos y pe
 
 La aplicación PnP necesita permisos para las operaciones de administración y lectura de asignaciones. Algunas operaciones requieren permisos que permiten más que lectura aunque el recolector solo use Get/consultas CSOM. Su aprobación corresponde al administrador; no se solicita ni concede FullControl automáticamente. El rol SharePoint Administrator no garantiza acceso al contenido/permisos de todos los sitios: no se agregan administradores de colección para sortear una denegación.
 
+**Importante: el ejemplo manual de registro PnP que se enlaza usa `AllSites.Read` como permiso inicial. No es una matriz de permisos suficiente para este recolector.** Una cuenta Global Administrator no elimina el límite de los permisos delegados de la aplicación. El alcance administrativo (`Get-PnPTenant`, inventario de tenant y enumeración de permisos) debe prepararse y validarse expresamente; leer contenido y enumerar sus permisos son operaciones diferentes.
+
+Para validar ese alcance con la aplicación dedicada al levantamiento, el permiso delegado SharePoint a evaluar/aprobar es **`AllSites.FullControl`**, con consentimiento de administrador. Se agrega en **Permisos de API → Agregar un permiso → SharePoint → Permisos delegados → AllSites.FullControl**, no como permiso de aplicación ni como `Microsoft Graph/Sites.FullControl.All`. No se requieren secretos ni certificados para el inicio de sesión interactivo utilizado aquí. Tras aprobar el cambio, iniciar una conexión nueva y probar `Get-PnPTenant` antes de repetir el levantamiento.
+
+`AllSites.FullControl` permite también escrituras dentro de los derechos del usuario; no es un permiso OAuth de solo lectura, aunque el script solo ejecute lecturas. Su aprobación es una preparación administrativa separada y no se realiza desde este paquete. Si ese alcance no se aprueba, mantener la aplicación con los permisos acordados y dejar las consultas administrativas/ACL como no obtenidas o aportar evidencia manual. No ampliar roles ni permisos de forma automática para completar el informe.
+
+Un tenant CDX temporal con datos de demostración puede servir para validar los componentes habilitados. Su origen y duración no acreditan licencias Copilot, créditos, actividad real ni una restricción específica de las API. Un HTTP 400 del inventario debe diagnosticarse de forma independiente y no atribuirse sin evidencia al carácter demo del tenant.
+
 ### Aislamiento de módulos desde 2.0.2
 
 El recolector inicia automáticamente un proceso `pwsh -NoProfile` exclusivo para SharePoint. PnP.PowerShell no se importa junto con Graph, Az.Accounts o PowerApps en el proceso principal. Ambos procesos forman parte de la misma captura y utilizan el mismo TenantId/RunId; no hay que ejecutar dos levantamientos ni transferir tokens entre procesos.

@@ -62,6 +62,16 @@ Si no existe una aplicación corporativa compatible, su registro/configuración 
 
 La comprobación `-PreflightOnly` valida autenticación e inventario administrativo; no certifica acceso a todas las ACL/enlaces. Las denegaciones por sitio quedan registradas durante la captura completa. Ver el paso a paso en los requisitos del [README](../README.md#preparación-previa-de-sharepoint-y-obtención-del-clientid).
 
+### Alcance de AllSites.Read y consultas administrativas
+
+El ejemplo manual de registro enlazado propone `AllSites.Read` como punto de partida y pide adaptar los permisos a las operaciones. Ese permiso no debe presentarse como suficiente para todo el recolector. Un rol Global Administrator del usuario y un consentimiento correcto de AllSites.Read no conceden por sí solos un scope más amplio a la aplicación.
+
+Para validar el alcance administrativo y de enumeración de permisos de este recolector con una aplicación dedicada, evaluar/aprobar **SharePoint → Delegado → AllSites.FullControl**, conceder el consentimiento requerido y abrir una conexión nueva. No usar permisos de aplicación ni sustituirlo por un permiso de Microsoft Graph. El inicio interactivo no necesita un secreto o certificado. Antes de repetir el preflight, verificar la operación puntual Get-PnPTenant.
+
+Ese permiso habilita escrituras dentro de los derechos del usuario y exige aprobación expresa de su alcance; el recolector no lo agrega ni concede, y continúa ejecutando solo lecturas. AllSites.FullControl tampoco asigna acceso directo a cada sitio al usuario conectado. Si el alcance no se aprueba, registrar las limitaciones y completar las evidencias administrativas por una vía autorizada separada.
+
+Referencia para distinguir permisos de conexión, scopes y derechos sobre sitios: https://pnp.github.io/powershell/articles/determinepermissions.html . La documentación de Get-PnPTenant exige acceso al centro de administración SharePoint: https://pnp.github.io/powershell/cmdlets/Get-PnPTenant.html . Una conexión exitosa no sustituye esa comprobación.
+
 PnP.PowerShell requiere ClientId propio autorizado, acceso al centro de administración y permisos para consultar asignaciones en los sitios. Usa Connect-PnPOnline interactivo por conexión explícita y valida tenant, contexto delegado, audiencia y vigencia del token SharePoint antes de consultar.
 
 Consultas: Get-PnPTenant, Get-PnPTenantSite, Get-PnPWeb, Get-PnPSubWeb, Get-PnPList, Get-PnPListItem, Get-PnPProperty, Get-PnPGroupMember, Get-PnPFileSharingLink y Get-PnPFolderSharingLink. Solo metadatos y permisos.
