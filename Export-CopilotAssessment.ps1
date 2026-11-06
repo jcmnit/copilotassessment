@@ -62,7 +62,7 @@ $script:checkpointEnabled=$false
 $script:authentication=[ordered]@{TenantId=$TenantId.ToString();OrigenTenant='Parametro obligatorio';GraphClientId=$null;PowerPlatformClientId=$null;OrigenPowerPlatform=$null;NoInteractive=[bool]$NoInteractive}
 . (Join-Path $PSScriptRoot 'lib/Core.ps1')
 $script:execution=[ordered]@{
-    Version='2.0.4';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
+    Version='2.0.5';SchemaVersion='2.0';TenantId=$TenantId.ToString();RunId=$script:runId
     InicioUTC=$script:started.ToString('o');FinUTC=$null;EstadoRecoleccion='EnCurso';EstadoEvaluacion='NoEvaluado'
     SoloLecturaRemota=$true;PowerShell=$PSVersionTable.PSVersion.ToString();Sistema=$PSVersionTable.OS
     ScriptSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash

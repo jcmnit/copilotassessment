@@ -47,6 +47,7 @@ function Get-BroadPrincipal([string]$Login) {
 }
 function Read-SpoRoleScope($Object,[string]$ScopeType,[string]$ScopeId,[string]$SiteUrl,$Connection) {
     Assert-Deadline
+    $script:spoStage='LeerAsignaciones-'+$ScopeType
     $assignments=@(Get-PnPProperty -ClientObject $Object -Property RoleAssignments -Connection $Connection -ErrorAction Stop)
     foreach ($assignment in $assignments) {
         $null=Get-PnPProperty -ClientObject $assignment -Property Member,RoleDefinitionBindings -Connection $Connection -ErrorAction Stop
@@ -72,6 +73,7 @@ function Read-SpoRoleScope($Object,[string]$ScopeType,[string]$ScopeId,[string]$
 function Read-SpoSharingLinks($Item,[string]$SiteUrl,$Connection) {
     $path=[string]$Item.FieldValues.FileRef
     if (-not $path) {throw [IO.InvalidDataException]::new('Item sin FileRef.')}
+    $script:spoStage='LeerEnlaces'
     $links=@()
     if ([int]$Item.FieldValues.FSObjType -eq 1) {$links=@(Get-PnPFolderSharingLink -Folder $path -Connection $Connection -ErrorAction Stop)}
     else {$links=@(Get-PnPFileSharingLink -Identity $path -Connection $Connection -ErrorAction Stop)}
@@ -88,8 +90,11 @@ function Read-SharePointSite([string]$SiteUrl,[string]$SourceId) {
     $permissionStart=$script:spoPermissions.Count;$linkStart=$script:spoLinks.Count
     $itemsRead=0;$uniqueRead=0;$complete=$false
     try {
+        $script:spoStage='ConectarSitio'
         $connection=Connect-AssessmentSharePoint $SiteUrl
+        $script:spoStage='LeerWeb'
         $web=Get-PnPWeb -Includes Url,HasUniqueRoleAssignments -Connection $connection -ErrorAction Stop
+        $script:spoStage='EnumerarSubwebs'
         $subwebs=@(Get-PnPSubWeb -Recurse -Includes Url -Connection $connection -ErrorAction Stop)
         if ($subwebs.Count -gt $MaxSubWebsPerSite) {throw [OperationCanceledException]::new('Limite de subwebs superado.')}
         $webUrls=@($web.Url)+@($subwebs | ForEach-Object {$_.Url})
@@ -98,6 +103,7 @@ function Read-SharePointSite([string]$SiteUrl,[string]$SourceId) {
             if ($webUrl -ne $web.Url) {$connection=Connect-AssessmentSharePoint $webUrl}
             $currentWeb=Get-PnPWeb -Includes Url,HasUniqueRoleAssignments -Connection $connection -ErrorAction Stop
             Read-SpoRoleScope $currentWeb 'Web' $webUrl $SiteUrl $connection
+            $script:spoStage='EnumerarListas'
             $lists=@(Get-PnPList -Includes Hidden,HasUniqueRoleAssignments,RootFolder,ItemCount,BaseType -Connection $connection -ErrorAction Stop)
             foreach ($list in $lists) {
                 if ($list.Hidden) {continue}
@@ -107,6 +113,7 @@ function Read-SharePointSite([string]$SiteUrl,[string]$SourceId) {
                     Read-SpoRoleScope $list 'List' ([string]$list.Id) $SiteUrl $connection
                 }
                 # Procesamiento streaming: no materializar toda la biblioteca antes de aplicar el limite.
+                $script:spoStage='LeerMetadatosItems'
                 Get-PnPListItem -List $list.Id -PageSize 200 -Fields FileRef,FileLeafRef,FSObjType -Connection $connection -ErrorAction Stop | ForEach-Object {
                     Assert-Deadline
                     if ($itemsRead -ge $MaxItemsPerSite) {throw [OperationCanceledException]::new('Limite de items superado.')}
@@ -147,6 +154,7 @@ function Collect-SharePointCore {
     if (-not $SharePointAdminUrl -or $SharePointClientId -eq [guid]::Empty) {Add-Status 'SharePointInventario' 'No obtenido' 0 'Requiere SharePointAdminUrl y SharePointClientId de aplicacion ya autorizada. No se deduce el hostname del dominio Entra.';return}
     $sites=@(Collect 'SharePointInventario' {
         Import-Module PnP.PowerShell -ErrorAction Stop
+        $script:spoStage='InventarioAdministrativo'
         Assert-SharePointUrl $SharePointAdminUrl -Admin
         $admin=Connect-AssessmentSharePoint $SharePointAdminUrl
         $tenantSettings=Get-PnPTenant -Connection $admin -ErrorAction Stop

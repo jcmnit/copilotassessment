@@ -48,15 +48,28 @@ function Add-Status([string]$Name, [string]$State, [int]$Count, [string]$Detail)
     }
 }
 function Get-SafeError($Record) {
-    $http = Get-Field $Record.Exception 'Response.StatusCode'
-    if ($null -eq $http) { $http = Get-Field $Record.Exception 'ResponseStatusCode' }
-    if ($null -ne $http) {try {$http=[int]$http} catch {$http=$null}}
+    $http=$null;$serverCode=$null;$accessDenied=$false;$rootType=$Record.Exception.GetType().Name
+    $exception=$Record.Exception
+    for ($depth=0;$exception -and $depth -lt 8;$depth++) {
+        $rootType=$exception.GetType().Name
+        $candidate=Get-Field $exception 'Response.StatusCode'
+        if ($null -eq $candidate) {$candidate=Get-Field $exception 'ResponseStatusCode'}
+        if ($null -ne $candidate) {try {$http=[int]$candidate} catch {}}
+        $code=Get-Field $exception 'ServerErrorCode'
+        if ($null -ne $code) {try {$serverCode=[long]$code} catch {}}
+        # PnP puede reducir ServerUnauthorizedAccessException a System.Exception.
+        # Reconocer solo mensajes conocidos; nunca persistir el mensaje original.
+        if ($exception -is [UnauthorizedAccessException] -or $serverCode -eq -2147024891 -or
+            $exception.Message -match '(?i)^(Access denied[.:]|Access is denied[.]|Attempted to perform an unauthorized operation[.]|Acceso denegado[.:])' -or
+            $exception.Message -match '(?i)0x80070005') {$accessDenied=$true}
+        $exception=$exception.InnerException
+    }
     $kind = 'ErrorDeServicio'
     if ($Record.Exception -is [Security.Authentication.AuthenticationException]) { $kind='SinPermiso' }
     if ($Record.Exception -is [IO.InvalidDataException]) { $kind='ErrorDeEsquema' }
     if ($Record.Exception -is [TimeoutException]) { $kind='TiempoAgotado' }
     if ($Record.Exception -is [OperationCanceledException]) { $kind='LimiteAlcance' }
-    if ($http -in @(401,403)) { $kind='SinPermiso' }
+    if ($http -in @(401,403) -or $accessDenied) { $kind='SinPermiso' }
     if ($http -eq 400) {$kind='SolicitudInvalida'}
     if ($http -eq 404) {$kind='NoDisponible'}
     $serviceCode=$null
@@ -72,7 +85,7 @@ function Get-SafeError($Record) {
     $requestId = Get-Field $Record.Exception 'Response.Headers.request-id'
     if ($requestId -and [string]$requestId -notmatch '^[a-zA-Z0-9-]{1,100}$') { $requestId=$null }
     # No se persisten Message, cuerpos, Location ni enlaces de descarga autenticados.
-    [pscustomobject]@{Estado=$kind;HTTP=[string]$http;Tipo=$Record.Exception.GetType().Name;RequestId=[string]$requestId;CodigoServicio=$serviceCode}
+    [pscustomobject]@{Estado=$kind;HTTP=[string]$http;Tipo=$Record.Exception.GetType().Name;TipoInterno=$rootType;CodigoServidor=$serverCode;Motivo=$(if ($accessDenied) {'AccesoDenegado'} else {$null});RequestId=[string]$requestId;CodigoServicio=$serviceCode;Archivo=[IO.Path]::GetFileName([string]$Record.InvocationInfo.ScriptName);Linea=[int]$Record.InvocationInfo.ScriptLineNumber}
 }
 function Assert-Deadline {
     if ([datetime]::UtcNow -gt $script:deadline) { throw [TimeoutException]::new('Tiempo global agotado.') }
@@ -90,7 +103,7 @@ function Collect([string]$Name, [scriptblock]$Action) {
         return $rows
     } catch {
         $e = Get-SafeError $_
-        $script:diagnostics.Add([pscustomobject]@{Fuente=$Name;HTTP=$e.HTTP;Tipo=$e.Tipo;RequestId=$e.RequestId;CodigoServicio=$e.CodigoServicio;PaginasRecuperadas=$script:sourcePages;UTC=[datetime]::UtcNow.ToString('o')})
+        $script:diagnostics.Add([pscustomobject]@{Fuente=$Name;HTTP=$e.HTTP;Tipo=$e.Tipo;TipoInterno=$e.TipoInterno;CodigoServidor=$e.CodigoServidor;Motivo=$e.Motivo;Archivo=$e.Archivo;Linea=$e.Linea;Etapa=$(if ($Name -like 'SharePoint*') {$script:spoStage} else {$null});RequestId=$e.RequestId;CodigoServicio=$e.CodigoServicio;PaginasRecuperadas=$script:sourcePages;UTC=[datetime]::UtcNow.ToString('o')})
         Add-Status $Name $e.Estado 0 ("HTTP={0}; tipo={1}; paginas conservadas={2}; codigo={3}. No equivale a cero recursos; 400 no acredita falta de permisos y 404 no acredita capacidad cero." -f $e.HTTP,$e.Tipo,$script:sourcePages,$e.CodigoServicio)
         Write-Warning "$Name incompleto: $($e.Estado)."
         return @()

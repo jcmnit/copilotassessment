@@ -1,4 +1,4 @@
-# Levantamiento de Microsoft 365 Copilot — v2.0.4
+# Levantamiento de Microsoft 365 Copilot — v2.0.5
 
 Recolector PowerShell de lectura para ejecutar **por separado en cada tenant**, conservar evidencias y elaborar un informe y una propuesta de gobierno. Incluye Microsoft 365 Copilot, agentes Copilot Studio/Agent Builder, Power Platform, Entra, roles Dataverse y permisos/compartición SharePoint.
 
@@ -41,6 +41,26 @@ El worker realiza **un solo intento interactivo PnP por ejecución**, incluidos 
 Si se cancela el login, el token no es válido, caduca o aparece HTTP 401, SharePoint se detiene con cobertura parcial. No solicita otra sesión ni recorre los sitios restantes con intentos interactivos. HTTP 403 por sitio se conserva como falta de permisos y puede continuar con el mismo token. No se asignan administradores de colección ni se modifican permisos. Las conexiones con token no lo renuevan: una captura que exceda su vigencia requiere completar posteriormente el alcance pendiente; no representa una captura completa.
 
 **Esto no unifica los clientes Graph, Azure, PowerApps y PnP.** Pueden pedir una autenticación inicial independiente. La aplicación PnP configurada solo con permisos SharePoint no autoriza Graph o Power Platform. Un único login para todos requiere otra arquitectura de autenticación compartida y permisos aprobados para cada recurso; esta versión no promete ese comportamiento ni agrega permisos automáticamente.
+
+### Acceso a permisos de sitios: resolución en 2.0.5
+
+Hay dos autorizaciones independientes. La aplicación debe tener **SharePoint / AllSites.FullControl delegado**, con consentimiento administrativo. La cuenta que inicia sesión debe tener **Enumerate Permissions** (incluido en Control total) en cada alcance que se consulta. Ser Administrador Global o administrador de SharePoint no asigna automáticamente derechos sobre el contenido de todos los sitios. El consentimiento de la aplicación no eleva esos derechos del usuario.
+
+Para una revisión completa de permisos únicos, la opción operativa es preparar temporalmente la cuenta de levantamiento como **administrador del sitio / administrador de colección** de los sitios acordados. Control total limitado al web raíz puede no cubrir alcances con herencia interrumpida. Esta es una concesión administrativa que requiere aprobación del responsable; el recolector no la realiza. Registrar las asignaciones previas y retirar después solo los accesos temporales añadidos para el levantamiento.
+
+**Validar primero un sitio:** en el centro de administración SharePoint → Sitios activos → seleccionar el sitio → Administradores del sitio (según la interfaz, dentro de Pertenencia o Permisos), agregar la cuenta del levantamiento. No basta agregarla a Visitantes o Miembros. No sustituir propietarios existentes ni modificar herencia. Como alternativa para un sitio autorizado, `Set-PnPTenantSite -Identity '<URL>' -Owners '<UPN>'` añade administradores secundarios y conserva los anteriores según la documentación PnP; no lo ejecuta esta herramienta.
+
+Ejecutar luego la prueba de solo lectura en una consola independiente. Requiere únicamente PnP.PowerShell y un solo inicio de sesión para administración y sitio:
+
+```powershell
+pwsh -NoExit -NoProfile -File 'C:\pw7\Copilot-2.0.5\Test-SharePointAccess.ps1' -TenantId 'GUID-TENANT' -SharePointAdminUrl 'https://cliente-admin.sharepoint.com' -SharePointClientId 'GUID-APP-PNP' -SiteUrl 'https://cliente.sharepoint.com' -OutputDirectory 'C:\pw7\Copilot\Diagnostico-SharePoint'
+```
+
+`diagnostico-sharepoint.json` separa scope de la aplicación, `IsSiteAdmin`, derechos `EnumeratePermissions`, `ManagePermissions` y `ViewListItems`, lectura de asignaciones, subwebs y listas. No escribe tokens ni mensajes originales. Un resultado correcto prueba esas operaciones del sitio seleccionado; no certifica todos los items/enlaces ni otros sitios. Si falla, conserva etapa, tipo interno, código CSOM y ubicación para distinguir autorización de un error del script. PnP puede devolver `System.Exception` sin HTTP: las frases conocidas de acceso denegado se clasifican como `SinPermiso` sin guardar el mensaje.
+
+El ZIP real de 2.0.4 confirmó un intento PnP y 27 sitios inventariados, pero 27 fallos de permisos con diagnóstico insuficiente. Eso no demuestra por sí solo que todos fueran denegaciones; la prueba acotada confirma la causa antes de ampliar accesos o repetir la captura integral. No se atribuye esta falla a la ausencia de licencias Copilot.
+
+Referencias: [permisos PnP](https://pnp.github.io/powershell/articles/determinepermissions.html), [administradores secundarios con Set-PnPTenantSite](https://pnp.github.io/powershell/cmdlets/Set-PnPTenantSite.html#-owners).
 
 ### Preparación previa de SharePoint y obtención del ClientId
 

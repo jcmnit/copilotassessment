@@ -1,5 +1,9 @@
 # Validación
 
+## Versión 2.0.5
+
+Suite principal: **1521 aserciones y 738 llamadas simuladas, OK**. Prueba nueva de acceso SharePoint: **36 aserciones, OK** en PowerShell 7.4.6/Linux. Verifica login único, reutilización de token, scope de aplicación independiente de derechos de usuario, permisos ACL denegados con Exception sin HTTP, UnauthorizedAccessException interna y acceso de sitio independiente del administrativo. No se exportan mensajes originales ni tokens, ni se cambian permisos. El diagnóstico real del sitio permanece pendiente de ejecutar por el usuario; las evidencias 2.0.4 no contienen el detalle necesario para acreditar la causa de los 27 fallos.
+
 ## Versión 2.0.4
 
 PowerShell 7.4.6/Linux: **1521 aserciones y 738 llamadas simuladas** en la suite principal; **30 aserciones** de diagnóstico y **28** de recuperación. Sin conexiones reales a tenants.

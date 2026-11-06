@@ -72,7 +72,7 @@ Ese permiso habilita escrituras dentro de los derechos del usuario y exige aprob
 
 Referencia para distinguir permisos de conexión, scopes y derechos sobre sitios: https://pnp.github.io/powershell/articles/determinepermissions.html . La documentación de Get-PnPTenant exige acceso al centro de administración SharePoint: https://pnp.github.io/powershell/cmdlets/Get-PnPTenant.html . Una conexión exitosa no sustituye esa comprobación.
 
-PnP.PowerShell requiere ClientId propio autorizado, acceso al centro de administración y permisos para consultar asignaciones en los sitios. Usa Connect-PnPOnline interactivo por conexión explícita y valida tenant, contexto delegado, audiencia y vigencia del token SharePoint antes de consultar.
+PnP.PowerShell requiere ClientId propio autorizado, acceso al centro de administración y permisos para consultar asignaciones en los sitios. Usa un solo intento Connect-PnPOnline interactivo por ejecución SharePoint y conexiones AccessToken posteriores sin fallback interactivo y valida tenant, contexto delegado, audiencia y vigencia del token SharePoint antes de consultar.
 
 Consultas: Get-PnPTenant, Get-PnPTenantSite, Get-PnPWeb, Get-PnPSubWeb, Get-PnPList, Get-PnPListItem, Get-PnPProperty, Get-PnPGroupMember, Get-PnPFileSharingLink y Get-PnPFolderSharingLink. Solo metadatos y permisos.
 
@@ -82,6 +82,12 @@ No se cambia ninguna asignación de permisos. Una denegación de acceso requiere
 - https://pnp.github.io/powershell/cmdlets/Get-PnPAccessToken.html
 - https://pnp.github.io/powershell/cmdlets/Get-PnPProperty.html
 - https://pnp.github.io/powershell/cmdlets/Get-PnPFileSharingLink.html
+
+### Derechos del usuario en cada sitio
+
+`AllSites.FullControl` delegado limita las operaciones a los derechos del usuario conectado. Se necesita `Enumerate Permissions` para leer ACL y lectura de metadatos; `Control total` lo incluye en el alcance asignado. El rol Global Administrator/SharePoint Administrator permite tareas administrativas y no otorga acceso automático al contenido de cada sitio. Para cubrir alcances con permisos únicos, preparar una cuenta como administrador del sitio/colección en los sitios acordados, con aprobación y retiro posterior de asignaciones temporales. No es una licencia Copilot ni un permiso Graph adicional.
+
+La prueba `Test-SharePointAccess.ps1` de 2.0.5 verifica un sitio con un login PnP y registra los derechos efectivos de la cuenta y la etapa denegada. Se ejecuta independientemente del levantamiento, sin importar Graph/Azure/PowerApps, cambiar permisos o leer contenido. Ver instrucciones concretas en README. Referencias: https://pnp.github.io/powershell/articles/determinepermissions.html y https://pnp.github.io/powershell/cmdlets/Set-PnPTenantSite.html#-owners .
 
 ## Dataverse
 

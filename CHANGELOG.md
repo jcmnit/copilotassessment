@@ -1,5 +1,12 @@
 # Cambios
 
+## 2.0.5
+
+- Documenta la distinción entre AllSites.FullControl delegado de la aplicación y Enumerate Permissions/Control total del usuario en cada alcance. Administrador global no equivale a administrador de todos los sitios.
+- Prueba acotada Test-SharePointAccess.ps1: un sitio, un intento PnP, scopes conocidos, derechos efectivos, lectura de asignaciones/subwebs/listas; sin cambios de permisos ni tokens exportados.
+- Diagnósticos conservan etapa, archivo/línea, tipo interno y código CSOM; reconoce denegaciones conocidas aunque PnP las reduzca a Exception sin HTTP. No guarda mensajes originales ni inventa códigos HTTP.
+- Mantiene el login PnP único y los demás clientes independientes. No afirma corregidos en tenant los 27 errores originales sin ejecutar la prueba de acceso.
+
 ## 2.0.4
 
 - Corrige el login interactivo por sitio/subsitio: un intento PnP y reutilización de token delegado exclusivamente en memoria, también para el contexto administrativo.
